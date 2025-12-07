@@ -936,8 +936,8 @@ function findChatInputFields() {
 
 /**
  * Inserts a message into a chat input field
- * Uses proper text insertion methods to ensure LinkedIn recognizes the content
- * LinkedIn's contenteditable fields require specific DOM structure and event sequence
+ * Uses the approach that works reliably with LinkedIn's contenteditable fields
+ * Based on working browser console code that properly inserts text (not as placeholder)
  * @param {HTMLElement} inputElement - The chat input element
  * @param {string} message - The message text to insert
  * @returns {Promise<boolean>} - Promise that resolves to true if successful, false otherwise
@@ -948,163 +948,19 @@ async function insertMessage(inputElement, message) {
   }
 
   try {
-    // Focus the element first to ensure it's in the correct state
+    // Focus the element first
     inputElement.focus();
-
-    // Wait a moment for focus to settle
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
-    return new Promise((resolve) => {
-      try {
-        // Clear any existing content completely
-        // LinkedIn uses <p> tags for content, so we need to maintain that structure
-        inputElement.innerHTML = "";
-
-        // Wait a frame to ensure the DOM is updated
-        requestAnimationFrame(() => {
-          try {
-            // Method 1: Try using execCommand insertText (most reliable for contenteditable)
-            // This simulates actual user typing and is recognized by LinkedIn
-            const selection = window.getSelection();
-            const range = document.createRange();
-
-            // Set range to the contenteditable element
-            range.selectNodeContents(inputElement);
-            range.collapse(true); // Collapse to start
-
-            selection.removeAllRanges();
-            selection.addRange(range);
-
-            // Try execCommand first (best compatibility)
-            if (document.execCommand && document.execCommand("insertText", false, message)) {
-              // Success - text was inserted via execCommand
-              // Now trigger proper events in sequence
-              setTimeout(() => {
-                // Trigger beforeinput event (LinkedIn listens for this)
-                const beforeInputEvent = new InputEvent("beforeinput", {
-                  bubbles: true,
-                  cancelable: true,
-                  inputType: "insertText",
-                  data: message,
-                });
-                inputElement.dispatchEvent(beforeInputEvent);
-
-                // Trigger input event (LinkedIn uses this to update internal state)
-                const inputEvent = new InputEvent("input", {
-                  bubbles: true,
-                  cancelable: true,
-                  inputType: "insertText",
-                  data: message,
-                });
-                inputElement.dispatchEvent(inputEvent);
-
-                // Also trigger a change event
-                const changeEvent = new Event("change", { bubbles: true, cancelable: true });
-                inputElement.dispatchEvent(changeEvent);
-
-                processedInputs.add(inputElement);
-                console.log("[Content] Auto-inserted message into chat input (execCommand method)");
-                resolve(true);
-              }, 10);
-            } else {
-              // Fallback: Direct DOM manipulation with proper structure
-              // LinkedIn expects content in <p> tags (or sometimes just text nodes)
-              // Clear existing content first
-              inputElement.innerHTML = "";
-
-              // Create paragraph with the message text
-              // LinkedIn's structure typically uses <p> tags for each line
-              const p = document.createElement("p");
-              p.textContent = message;
-              inputElement.appendChild(p);
-
-              // Also set textContent directly (LinkedIn may check this)
-              inputElement.textContent = message;
-
-              // Remove any placeholder-related attributes/classes
-              inputElement.removeAttribute("data-placeholder");
-              inputElement.removeAttribute("placeholder");
-              inputElement.classList.remove("msg-form__placeholder");
-
-              // Try to set value property if it exists (some frameworks use this)
-              if ("value" in inputElement) {
-                try {
-                  inputElement.value = message;
-                } catch (e) {
-                  // value property might not be settable, that's okay
-                }
-              }
-
-              // Set selection to end of content to simulate cursor position
-              const selection = window.getSelection();
-              const range = document.createRange();
-              range.selectNodeContents(inputElement);
-              range.collapse(false); // Collapse to end
-              selection.removeAllRanges();
-              selection.addRange(range);
-
-              // Trigger events in proper sequence to notify LinkedIn's framework
-              setTimeout(() => {
-                // 1. beforeinput event (LinkedIn may use this to validate)
-                const beforeInputEvent = new InputEvent("beforeinput", {
-                  bubbles: true,
-                  cancelable: true,
-                  inputType: "insertText",
-                  data: message,
-                });
-                inputElement.dispatchEvent(beforeInputEvent);
-
-                // 2. input event (most important - LinkedIn uses this to update state)
-                const inputEvent = new InputEvent("input", {
-                  bubbles: true,
-                  cancelable: true,
-                  inputType: "insertText",
-                  data: message,
-                });
-                inputElement.dispatchEvent(inputEvent);
-
-                // 3. change event
-                const changeEvent = new Event("change", { bubbles: true, cancelable: true });
-                inputElement.dispatchEvent(changeEvent);
-
-                // 4. composition events (some frameworks track these for IME)
-                try {
-                  const compositionStart = new CompositionEvent("compositionstart", { bubbles: true });
-                  inputElement.dispatchEvent(compositionStart);
-
-                  const compositionEnd = new CompositionEvent("compositionend", {
-                    bubbles: true,
-                    data: message,
-                  });
-                  inputElement.dispatchEvent(compositionEnd);
-                } catch (e) {
-                  // CompositionEvent might not be available in all contexts
-                }
-
-                // Ensure focus is maintained and selection is at end
-                inputElement.focus();
-                const finalSelection = window.getSelection();
-                const finalRange = document.createRange();
-                finalRange.selectNodeContents(inputElement);
-                finalRange.collapse(false);
-                finalSelection.removeAllRanges();
-                finalSelection.addRange(finalRange);
-
-                processedInputs.add(inputElement);
-                console.log("[Content] Auto-inserted message into chat input (DOM method)");
-                resolve(true);
-              }, 10);
-            }
-          } catch (error) {
-            console.error("[Content] Error in text insertion:", error);
-            resolve(false);
-          }
-        });
-      } catch (error) {
-        console.error("[Content] Error inserting message:", error);
-        resolve(false);
-      }
-    });
+    
+    // Insert text using innerHTML with <p> tag (LinkedIn's expected structure)
+    inputElement.innerHTML = `<p>${message}</p>`;
+    
+    // Trigger input event so LinkedIn recognizes the change
+    // Using InputEvent with bubbles: true as recommended
+    inputElement.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    
+    processedInputs.add(inputElement);
+    console.log('[Content] Auto-inserted message into chat input');
+    return true;
   } catch (error) {
     console.error("[Content] Error inserting message:", error);
     return false;
