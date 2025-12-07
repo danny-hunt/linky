@@ -1086,52 +1086,50 @@ async function callLangCache(langCacheUrl, langCacheApiKey, langCacheId, openaiA
   const baseUrl = langCacheUrl.replace(/\/$/, "");
   const endpoint = `${baseUrl}/cache/chat/completions`;
   
-  console.log("[Content] Calling Redis LangCache for semantic caching", { endpoint, langCacheId });
+  console.log("[Content] Calling Redis LangCache for semantic caching via background script", { endpoint, langCacheId });
 
-  // Prepare request body - LangCache API expects OpenAI-compatible format
-  // The semantic cache key is automatically generated based on message content
-  const requestBody = {
-    messages: messages,
-    model: model,
-    max_tokens: maxTokens,
-    temperature: temperature,
-    // LangCache needs the OpenAI API key to call OpenAI on cache miss
-    // The exact structure may vary - this is a common pattern
-    provider: {
-      type: "openai",
-      api_key: openaiApiKey,
-    },
-  };
+  // Proxy the request through the background script to avoid CORS issues
+  // Content scripts run in the page context and are subject to CORS restrictions,
+  // but background scripts can make cross-origin requests to domains in host_permissions
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      {
+        action: "callLangCache",
+        langCacheUrl: langCacheUrl,
+        langCacheApiKey: langCacheApiKey,
+        langCacheId: langCacheId,
+        openaiApiKey: openaiApiKey,
+        messages: messages,
+        model: model,
+        maxTokens: maxTokens,
+        temperature: temperature,
+      },
+      (response) => {
+        // Check for Chrome runtime errors
+        if (chrome.runtime.lastError) {
+          console.error("[Content] LangCache message error:", chrome.runtime.lastError.message);
+          reject(new Error(`LangCache message error: ${chrome.runtime.lastError.message}`));
+          return;
+        }
 
-  // Some LangCache implementations may use the id in the header or path
-  // Try both common patterns
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${langCacheApiKey}`,
-      // Some implementations use X-LangCache-Id header
-      "X-LangCache-Id": langCacheId,
-    },
-    body: JSON.stringify(requestBody),
+        // Check for API errors in response
+        if (response.error) {
+          console.error("[Content] LangCache API error:", response.error);
+          reject(new Error(response.error));
+          return;
+        }
+
+        // Verify the response structure
+        if (!response.data || !response.data.choices || !Array.isArray(response.data.choices) || response.data.choices.length === 0) {
+          reject(new Error("Invalid LangCache response format: missing choices"));
+          return;
+        }
+
+        console.log("[Content] LangCache response received (cache hit or miss)");
+        resolve(response.data);
+      }
+    );
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("[Content] LangCache API error:", response.status, errorText);
-    throw new Error(`LangCache API error: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json();
-  
-  // LangCache should return OpenAI-compatible response format
-  // Verify the response structure
-  if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
-    throw new Error("Invalid LangCache response format: missing choices");
-  }
-
-  console.log("[Content] LangCache response received (cache hit or miss)");
-  return data;
 }
 
 /**

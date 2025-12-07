@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "description": "A Chrome extension that works on LinkedIn with a settings menu",
   "permissions": ["storage", "activeTab"],
-  "host_permissions": ["https://www.linkedin.com/*", "https://api.openai.com/*", "https://www.googleapis.com/*"],
-  "_comment": "Note: If using Redis LangCache, you may need to add your LANGCACHE_URL domain to host_permissions. Chrome extensions require explicit host permissions for external API calls.",
+  "host_permissions": ["https://www.linkedin.com/*", "https://api.openai.com/*", "https://www.googleapis.com/*", "https://*.langcache.redis.io/*"],
+  "_comment": "Note: LangCache domain pattern added to host_permissions to allow CORS requests from background script. Chrome extensions require explicit host permissions for external API calls.",
   "content_scripts": [
     {
       "matches": ["https://www.linkedin.com/*"],
