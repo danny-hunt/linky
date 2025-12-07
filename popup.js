@@ -30,53 +30,133 @@ const DEFAULT_PREFERENCES = {
 };
 
 // Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', async () => {
-  await initializeUI();
-  setupEventListeners();
-});
+async function init() {
+  console.log('Initializing popup, readyState:', document.readyState);
+  try {
+    await initializeUI();
+    setupEventListeners();
+  } catch (error) {
+    console.error('Error in initialization:', error);
+    showStatus('Error initializing: ' + error.message, 'error');
+  }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  // DOM is already ready (common for popup windows)
+  init();
+}
 
 /**
  * Initialize the UI with saved preferences
  */
 async function initializeUI() {
-  // Load saved preferences
-  const result = await chrome.storage.sync.get([
-    'userName',
-    'categories',
-    'categoryPreferences'
-  ]);
+  try {
+    // Load saved preferences
+    let result;
+    try {
+      result = await chrome.storage.sync.get([
+        'userName',
+        'categories',
+        'categoryPreferences'
+      ]);
+    } catch (storageError) {
+      console.error('Error accessing storage:', storageError);
+      // Use defaults if storage fails
+      result = {
+        userName: '',
+        categories: DEFAULT_CATEGORIES,
+        categoryPreferences: {}
+      };
+    }
 
-  // Set user name
-  const userNameInput = document.getElementById('userName');
-  if (result.userName) {
-    userNameInput.value = result.userName;
+    console.log('Loaded preferences:', result);
+
+    // Set user name
+    const userNameInput = document.getElementById('userName');
+    if (!userNameInput) {
+      console.error('userName input element not found');
+      return;
+    }
+    if (result.userName) {
+      userNameInput.value = result.userName;
+    }
+
+    // Initialize categories (merge defaults with saved custom categories)
+    let categories = result.categories || DEFAULT_CATEGORIES;
+    
+    // Ensure categories is an array and not empty
+    if (!Array.isArray(categories) || categories.length === 0) {
+      console.warn('Categories is not a valid array, using defaults');
+      categories = DEFAULT_CATEGORIES;
+      // Save defaults to storage
+      await chrome.storage.sync.set({ categories: DEFAULT_CATEGORIES });
+    }
+    
+    const preferences = result.categoryPreferences || {};
+
+    console.log('Categories to render:', categories);
+    console.log('Number of categories:', categories.length);
+    console.log('Preferences:', preferences);
+
+    // Render category preferences
+    renderCategoryPreferences(categories, preferences);
+
+    // Setup add category handler
+    setupAddCategoryHandler(categories);
+  } catch (error) {
+    console.error('Error initializing UI:', error);
+    showStatus('Error loading preferences: ' + error.message, 'error');
   }
-
-  // Initialize categories (merge defaults with saved custom categories)
-  const categories = result.categories || DEFAULT_CATEGORIES;
-  const preferences = result.categoryPreferences || {};
-
-  // Render category preferences
-  renderCategoryPreferences(categories, preferences);
-
-  // Setup add category handler
-  setupAddCategoryHandler(categories);
 }
 
 /**
  * Render all category preference cards
  */
 function renderCategoryPreferences(categories, savedPreferences) {
-  const container = document.getElementById('categoryPreferences');
-  container.innerHTML = '';
-
-  categories.forEach(category => {
-    const categoryKey = category.toLowerCase().replace(/\s+/g, '_');
-    const prefs = savedPreferences[categoryKey] || { ...DEFAULT_PREFERENCES };
+  try {
+    const container = document.getElementById('categoryPreferences');
+    if (!container) {
+      console.error('categoryPreferences container not found');
+      return;
+    }
     
-    const card = createCategoryCard(category, categoryKey, prefs);
-    container.appendChild(card);
-  });
+    console.log('Rendering categories:', categories);
+    container.innerHTML = '';
+
+    if (!categories || categories.length === 0) {
+      console.warn('No categories to render');
+      return;
+    }
+
+    categories.forEach(category => {
+      try {
+        const categoryKey = category.toLowerCase().replace(/\s+/g, '_');
+        const prefs = savedPreferences[categoryKey] || { ...DEFAULT_PREFERENCES };
+        
+        const card = createCategoryCard(category, categoryKey, prefs);
+        container.appendChild(card);
+      } catch (error) {
+        console.error(`Error creating card for category ${category}:`, error);
+      }
+    });
+    
+    // Verify cards were created
+    const createdCards = container.querySelectorAll('.category-card');
+    console.log(`Created ${createdCards.length} category cards`);
+    
+    if (createdCards.length === 0 && categories.length > 0) {
+      console.error('No cards were created despite having categories');
+      const errorMsg = document.createElement('div');
+      errorMsg.className = 'status error';
+      errorMsg.textContent = 'Error: Could not render category preferences. Check console for details.';
+      container.appendChild(errorMsg);
+    }
+  } catch (error) {
+    console.error('Error rendering category preferences:', error);
+    showStatus('Error rendering preferences: ' + error.message, 'error');
+  }
 }
 
 /**
@@ -402,12 +482,22 @@ async function saveAllPreferences() {
  * Show status message
  */
 function showStatus(message, type) {
-  const status = document.getElementById('status');
-  status.textContent = message;
-  status.className = `status ${type}`;
-  
-  setTimeout(() => {
-    status.className = 'status';
-    status.textContent = '';
-  }, 3000);
+  try {
+    const status = document.getElementById('status');
+    if (!status) {
+      console.warn('Status element not found, cannot show message:', message);
+      return;
+    }
+    status.textContent = message;
+    status.className = `status ${type}`;
+    
+    setTimeout(() => {
+      if (status) {
+        status.className = 'status';
+        status.textContent = '';
+      }
+    }, 3000);
+  } catch (error) {
+    console.error('Error showing status:', error);
+  }
 }
