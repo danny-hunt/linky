@@ -204,6 +204,112 @@ function showStatus(message, type) {
 }
 
 /**
+ * Extracts recipient information from LinkedIn chat interface
+ * Based on PRD.md: Extracts visible profile data (name, job title, company, etc.)
+ * @returns {Object|null} - Object with name and byline, or null if not found
+ */
+function extractRecipientInfo() {
+  console.log('[Content] Extracting recipient information from LinkedIn chat interface');
+  
+  try {
+    // LinkedIn chat header typically contains recipient info
+    // Common selectors for recipient name in chat interface
+    const nameSelectors = [
+      'div.msg-s-message-list__name',
+      'h2.msg-s-message-list__name',
+      'span.msg-s-message-list__name',
+      'div[data-testid="message-header-name"]',
+      'h2.msg-conversation-listitem__participant-names',
+      // Fallback: look for name in conversation header
+      'div.msg-conversation-header__title h2',
+      'div.msg-conversation-header__title span'
+    ];
+    
+    let name = null;
+    for (const selector of nameSelectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        name = element.textContent?.trim();
+        if (name) {
+          console.log('[Content] Found recipient name using selector:', selector, '=', name);
+          break;
+        }
+      }
+    }
+    
+    // Common selectors for recipient byline (job title, company, location)
+    const bylineSelectors = [
+      'div.msg-s-message-list__byline',
+      'span.msg-s-message-list__byline',
+      'div[data-testid="message-header-byline"]',
+      'div.msg-conversation-header__subtitle',
+      'p.msg-conversation-header__subtitle',
+      'span.msg-conversation-header__subtitle'
+    ];
+    
+    let byline = null;
+    for (const selector of bylineSelectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        byline = element.textContent?.trim();
+        if (byline) {
+          console.log('[Content] Found recipient byline using selector:', selector, '=', byline);
+          break;
+        }
+      }
+    }
+    
+    // If we found at least a name, return the info
+    if (name) {
+      const recipientInfo = {
+        name,
+        byline: byline || null
+      };
+      console.log('[Content] Extracted recipient info:', recipientInfo);
+      return recipientInfo;
+    } else {
+      console.log('[Content] Could not extract recipient information - no name found');
+      return null;
+    }
+  } catch (error) {
+    console.error('[Content] Error extracting recipient information:', error);
+    return null;
+  }
+}
+
+/**
+ * Performs research on the recipient after extracting their information
+ * This function orchestrates the research process
+ */
+async function performRecipientResearch() {
+  console.log('[Content] Starting recipient research process');
+  
+  // Extract recipient information from the page
+  const recipientInfo = extractRecipientInfo();
+  
+  if (!recipientInfo) {
+    console.log('[Content] No recipient info available, skipping research');
+    return null;
+  }
+  
+  // Check if research.js is available (it should be loaded before content.js)
+  if (typeof researchRecipient === 'undefined') {
+    console.warn('[Content] researchRecipient function not available - research.js may not be loaded');
+    return null;
+  }
+  
+  try {
+    console.log('[Content] Calling researchRecipient with:', recipientInfo);
+    const researchResults = await researchRecipient(recipientInfo);
+    console.log('[Content] Research completed:', researchResults);
+    return researchResults;
+  } catch (error) {
+    console.error('[Content] Error during recipient research:', error);
+    return null;
+  }
+}
+
+/**
  * Detects LinkedIn chat message input fields
  * LinkedIn uses contenteditable divs for message inputs
  * Based on actual LinkedIn structure: div.msg-form__contenteditable[contenteditable="true"]
@@ -322,9 +428,22 @@ function insertPlaceholderMessage(inputElement) {
  * Scans for chat interfaces and auto-inserts placeholder messages
  * Only processes empty inputs that haven't been processed yet
  * Adds a small delay to ensure LinkedIn's UI is stable
+ * Also triggers recipient research when a chat is detected
  */
 function detectAndInsertChatMessages() {
   const chatInputs = findChatInputFields();
+  
+  // If we found chat inputs, this means we're in a chat interface
+  // Trigger research for the recipient
+  if (chatInputs.length > 0) {
+    // Use a debounce to avoid multiple research calls
+    if (!detectAndInsertChatMessages.researchTimeout) {
+      detectAndInsertChatMessages.researchTimeout = setTimeout(() => {
+        performRecipientResearch();
+        detectAndInsertChatMessages.researchTimeout = null;
+      }, 1000); // Wait 1 second for LinkedIn UI to stabilize
+    }
+  }
   
   chatInputs.forEach(input => {
     // Only insert if the input is visible and not already processed

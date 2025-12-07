@@ -8,12 +8,14 @@
     "activeTab"
   ],
   "host_permissions": [
-    "https://www.linkedin.com/*"
+    "https://www.linkedin.com/*",
+    "https://api.openai.com/*",
+    "https://www.googleapis.com/*"
   ],
   "content_scripts": [
     {
       "matches": ["https://www.linkedin.com/*"],
-      "js": ["content.js"],
+      "js": ["research.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
     }
