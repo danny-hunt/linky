@@ -3,8 +3,19 @@
   "name": "Linky",
   "version": "1.0.0",
   "description": "A Chrome extension that works on LinkedIn with a settings menu",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
   "permissions": ["storage", "activeTab"],
-  "host_permissions": ["https://www.linkedin.com/*", "https://api.openai.com/*", "https://www.googleapis.com/*", "https://*.langcache.redis.io/*"],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "https://api.openai.com/*",
+    "https://www.googleapis.com/*",
+    "https://*.langcache.redis.io/*"
+  ],
   "_comment": "Note: LangCache domain pattern added to host_permissions to allow CORS requests from background script. Chrome extensions require explicit host permissions for external API calls.",
   "content_scripts": [
     {
@@ -15,7 +26,13 @@
     }
   ],
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
   },
   "background": {
     "service_worker": "background.js"

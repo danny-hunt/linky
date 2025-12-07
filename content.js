@@ -45,7 +45,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-
 /**
  * Extracts recipient information from LinkedIn chat interface
  * Based on PRD.md: Extracts visible profile data (name, job title, company, etc.)
@@ -526,7 +525,7 @@ async function getOpenAIApiKey() {
 async function getLangCacheCredentials() {
   // Check for hardcoded credentials in secrets.js
   let url, apiKey, id;
-  
+
   if (typeof self !== "undefined") {
     url = self.LANGCACHE_URL;
     apiKey = self.LANGCACHE_API_KEY;
@@ -666,14 +665,26 @@ async function categorizeInteraction(chatHistoryInfo, recipientInfo) {
  * @param {number} temperature - Temperature setting
  * @returns {Promise<Object>} - Response data from LangCache (OpenAI-compatible format)
  */
-async function callLangCache(langCacheUrl, langCacheApiKey, langCacheId, openaiApiKey, messages, model, maxTokens, temperature) {
+async function callLangCache(
+  langCacheUrl,
+  langCacheApiKey,
+  langCacheId,
+  openaiApiKey,
+  messages,
+  model,
+  maxTokens,
+  temperature
+) {
   // Construct the LangCache endpoint URL
   // Based on Redis LangCache API docs, the endpoint is /chat/completions
   // Remove trailing slash from URL if present
   const baseUrl = langCacheUrl.replace(/\/$/, "");
   const endpoint = `${baseUrl}/chat/completions`;
-  
-  console.log("[Content] Calling Redis LangCache for semantic caching via background script", { endpoint, langCacheId });
+
+  console.log("[Content] Calling Redis LangCache for semantic caching via background script", {
+    endpoint,
+    langCacheId,
+  });
 
   // Proxy the request through the background script to avoid CORS issues
   // Content scripts run in the page context and are subject to CORS restrictions,
@@ -707,7 +718,12 @@ async function callLangCache(langCacheUrl, langCacheApiKey, langCacheId, openaiA
         }
 
         // Verify the response structure
-        if (!response.data || !response.data.choices || !Array.isArray(response.data.choices) || response.data.choices.length === 0) {
+        if (
+          !response.data ||
+          !response.data.choices ||
+          !Array.isArray(response.data.choices) ||
+          response.data.choices.length === 0
+        ) {
           reject(new Error("Invalid LangCache response format: missing choices"));
           return;
         }
@@ -774,10 +790,12 @@ async function generateMessageDraft(context) {
       const researchItems = results
         .slice(0, 5) // Limit to top 5 results to avoid token limits
         .map((item, index) => {
-          return `${index + 1}. ${item.title || 'Untitled'}\n   ${item.snippet || item.link || 'No description'}\n   ${item.link || ''}`;
+          return `${index + 1}. ${item.title || "Untitled"}\n   ${item.snippet || item.link || "No description"}\n   ${
+            item.link || ""
+          }`;
         })
-        .join('\n\n');
-      
+        .join("\n\n");
+
       researchContext = `Research findings about the recipient (${results.length} total results found):\n\n${researchItems}`;
     } else if (researchResults?.searchResults?.error) {
       researchContext = `Research attempted but encountered an error: ${researchResults.searchResults.error}`;
@@ -793,9 +811,9 @@ async function generateMessageDraft(context) {
 
     // Include custom instructions if they exist and are not empty
     const customInstructionsContext = userPreferences?.customInstructions?.trim()
-      ? `\n\nCustom Instructions for this category:\n${userPreferences.customInstructions.trim()}`
+      ? `\n\nIMPORTANT Custom Instructions for this category:\n${userPreferences.customInstructions.trim()}`
       : "";
-    
+
     // Debug: Log if custom instructions are being included
     if (customInstructionsContext) {
       console.log("[Content] Including custom instructions in prompt:", userPreferences.customInstructions);
@@ -822,20 +840,13 @@ ${researchContext}
 
 Interaction Category: ${category}
 
-${preferencesContext}${customInstructionsContext}
+${preferencesContext}
+
+${customInstructionsContext}
 
 ${userName ? `Your name: ${userName}` : ""}
 
-Current time: ${new Date().toLocaleString()}`;
-    
-    // Debug: Log the full prompt section to verify custom instructions are included
-    const promptSection = `${preferencesContext}${customInstructionsContext}`;
-    console.log("[Content] Full preferences section being sent to OpenAI:", promptSection);`;
-    
-    // Debug: Log the full prompt section to verify custom instructions are included
-    const promptSection = `${preferencesContext}${customInstructionsContext}`;
-    console.log("[Content] Full preferences section being sent to OpenAI:", promptSection);
-
+Current time: ${new Date().toLocaleString()}
 Generate a personalized message draft that:
 - **CRITICALLY IMPORTANT: Responds directly to the LAST MESSAGE in the conversation history** - This is the most important requirement. Read the last message carefully and address its specific content, questions, or requests. Do NOT generate a generic message that could apply to any conversation.
 - Is appropriate for the interaction category
@@ -860,7 +871,7 @@ Return only the message text, nothing else. Do not include a subject line or ema
 
     // Try to use LangCache if credentials are available
     const langCacheCreds = await getLangCacheCredentials();
-    
+
     if (langCacheCreds) {
       try {
         console.log("[Content] Using Redis LangCache for semantic caching");
@@ -874,9 +885,9 @@ Return only the message text, nothing else. Do not include a subject line or ema
           maxTokens,
           temperature
         );
-        
+
         const message = langCacheData.choices?.[0]?.message?.content?.trim();
-        
+
         if (message) {
           console.log("[Content] Generated message draft from LangCache:", message);
           return message;
@@ -1074,17 +1085,17 @@ async function storeMessageHistory(message, context) {
         userName: context.userName || null,
         // Store research results summary (limit to avoid storage issues)
         hasResearchResults: !!(context.researchResults && context.researchResults.searchResults),
-        researchResults: context.researchResults?.searchResults?.results 
+        researchResults: context.researchResults?.searchResults?.results
           ? {
               searchTerm: context.researchResults.searchTerm,
               totalResults: context.researchResults.searchResults.totalResults || 0,
               results: context.researchResults.searchResults.results
                 .slice(0, 5) // Store only top 5 results
-                .map(item => ({
-                  title: item.title || 'Untitled',
-                  snippet: item.snippet || '',
-                  link: item.link || ''
-                }))
+                .map((item) => ({
+                  title: item.title || "Untitled",
+                  snippet: item.snippet || "",
+                  link: item.link || "",
+                })),
             }
           : null,
       },
@@ -1200,7 +1211,7 @@ async function generateAndInsertMessage(inputElement) {
       formalityLevel: "moderate",
     };
     const userName = result.userName || "";
-    
+
     // Debug: Log preferences to verify customInstructions are included
     console.log("[Content] Category:", category, "Category Key:", categoryKey);
     console.log("[Content] User preferences for category:", userPreferences);
@@ -1293,17 +1304,17 @@ function isUserOwnProfile() {
     // LinkedIn profile URLs typically follow patterns like:
     // - /in/username/ (for public profiles)
     // - /feed/ (home feed, which indicates you're viewing your own content)
-    
+
     const currentUrl = window.location.href;
     const pathname = window.location.pathname;
-    
+
     // Check if we're on a profile page (not messaging, feed, etc.)
     const isProfilePage = pathname.match(/^\/in\/[^\/]+\/?$/) || pathname.match(/^\/in\/[^\/]+\/recent-activity\/?$/);
-    
+
     if (!isProfilePage) {
       return false;
     }
-    
+
     // Look for indicators that this is the user's own profile:
     // 1. Check for "Edit profile" button or similar controls
     const editProfileSelectors = [
@@ -1314,7 +1325,7 @@ function isUserOwnProfile() {
       'button[data-control-name="edit_topcard"]',
       'a[data-control-name="edit_topcard"]',
     ];
-    
+
     for (const selector of editProfileSelectors) {
       const element = document.querySelector(selector);
       if (element) {
@@ -1322,18 +1333,18 @@ function isUserOwnProfile() {
         return true;
       }
     }
-    
+
     // Also check for text content containing "Edit profile"
-    const allButtons = document.querySelectorAll('button, a');
+    const allButtons = document.querySelectorAll("button, a");
     for (const btn of allButtons) {
-      const text = btn.textContent?.toLowerCase() || '';
-      const ariaLabel = btn.getAttribute('aria-label')?.toLowerCase() || '';
-      if (text.includes('edit profile') || ariaLabel.includes('edit profile')) {
+      const text = btn.textContent?.toLowerCase() || "";
+      const ariaLabel = btn.getAttribute("aria-label")?.toLowerCase() || "";
+      if (text.includes("edit profile") || ariaLabel.includes("edit profile")) {
         console.log("[Content] Found edit profile button via text search, confirming own profile");
         return true;
       }
     }
-    
+
     // 2. Check for "View profile as" or "See how others see your profile" - these only appear on own profile
     const viewAsSelectors = [
       'button[aria-label*="View profile as"]',
@@ -1341,7 +1352,7 @@ function isUserOwnProfile() {
       'a[aria-label*="View profile as"]',
       'a[aria-label*="See how others see"]',
     ];
-    
+
     for (const selector of viewAsSelectors) {
       const element = document.querySelector(selector);
       if (element) {
@@ -1349,57 +1360,61 @@ function isUserOwnProfile() {
         return true;
       }
     }
-    
+
     // Also check for text content
     for (const btn of allButtons) {
-      const text = btn.textContent?.toLowerCase() || '';
-      const ariaLabel = btn.getAttribute('aria-label')?.toLowerCase() || '';
-      if (text.includes('view profile as') || text.includes('see how others see') ||
-          ariaLabel.includes('view profile as') || ariaLabel.includes('see how others see')) {
+      const text = btn.textContent?.toLowerCase() || "";
+      const ariaLabel = btn.getAttribute("aria-label")?.toLowerCase() || "";
+      if (
+        text.includes("view profile as") ||
+        text.includes("see how others see") ||
+        ariaLabel.includes("view profile as") ||
+        ariaLabel.includes("see how others see")
+      ) {
         console.log("[Content] Found 'view as' option via text search, confirming own profile");
         return true;
       }
     }
-    
+
     // 3. Check for "Me" navigation item being active (if available)
     const meNavItem = document.querySelector('nav a[href*="/in/"]');
     if (meNavItem) {
-      const meNavText = meNavItem.textContent?.toLowerCase() || '';
-      const meNavAriaLabel = meNavItem.getAttribute('aria-label')?.toLowerCase() || '';
-      if (meNavText.includes('me') || meNavAriaLabel.includes('me') || meNavAriaLabel.includes('profile')) {
+      const meNavText = meNavItem.textContent?.toLowerCase() || "";
+      const meNavAriaLabel = meNavItem.getAttribute("aria-label")?.toLowerCase() || "";
+      if (meNavText.includes("me") || meNavAriaLabel.includes("me") || meNavAriaLabel.includes("profile")) {
         // Check if this nav item's href matches current profile URL
-        const navHref = meNavItem.getAttribute('href');
-        if (navHref && currentUrl.includes(navHref.split('?')[0])) {
+        const navHref = meNavItem.getAttribute("href");
+        if (navHref && currentUrl.includes(navHref.split("?")[0])) {
           console.log("[Content] Found active 'Me' nav item matching current profile");
           return true;
         }
       }
     }
-    
+
     // 4. Check for profile header actions that only appear on own profile
     // Look for "Add profile section" or similar
-    const profileActions = document.querySelectorAll('button, a');
+    const profileActions = document.querySelectorAll("button, a");
     for (const action of profileActions) {
-      const text = action.textContent?.toLowerCase() || '';
-      const ariaLabel = action.getAttribute('aria-label')?.toLowerCase() || '';
+      const text = action.textContent?.toLowerCase() || "";
+      const ariaLabel = action.getAttribute("aria-label")?.toLowerCase() || "";
       if (
-        text.includes('add profile section') ||
-        text.includes('add section') ||
-        ariaLabel.includes('add profile section') ||
-        ariaLabel.includes('add section')
+        text.includes("add profile section") ||
+        text.includes("add section") ||
+        ariaLabel.includes("add profile section") ||
+        ariaLabel.includes("add section")
       ) {
         console.log("[Content] Found 'add section' button, confirming own profile");
         return true;
       }
     }
-    
+
     // 5. Check URL pattern - if URL matches the pattern for "me" profile
     // LinkedIn sometimes uses /in/me/ or similar patterns
-    if (pathname.includes('/me') || pathname.includes('/in/me')) {
+    if (pathname.includes("/me") || pathname.includes("/in/me")) {
       console.log("[Content] URL pattern suggests own profile (/me)");
       return true;
     }
-    
+
     // If none of the indicators are found, assume it's not the user's profile
     // This is a conservative approach - we only scrape when we're confident
     console.log("[Content] Could not confirm this is user's own profile");
@@ -1417,25 +1432,25 @@ function isUserOwnProfile() {
  */
 async function extractUserProfileInfo() {
   console.log("[Content] Extracting user profile information using OpenAI");
-  
+
   try {
     const openaiApiKey = await getOpenAIApiKey();
-    
+
     if (!openaiApiKey) {
       console.warn("[Content] No OpenAI API key available for profile extraction");
       return null;
     }
-    
+
     // Get the main profile content area
     // LinkedIn profile pages typically have a main content area with profile information
     const profileSelectors = [
-      'main',
+      "main",
       'div[class*="profile"]',
       'section[class*="profile"]',
       'div[data-testid="profile"]',
       'div[class*="pv-profile"]',
     ];
-    
+
     let profileContainer = null;
     for (const selector of profileSelectors) {
       const element = document.querySelector(selector);
@@ -1444,25 +1459,25 @@ async function extractUserProfileInfo() {
         break;
       }
     }
-    
+
     // Fallback to body if no specific container found
     if (!profileContainer) {
       profileContainer = document.body;
     }
-    
+
     // Clone to avoid modifying the original
     const clonedContainer = profileContainer.cloneNode(true);
-    
+
     // Remove non-content elements
-    clonedContainer.querySelectorAll('script, style, noscript, nav, header, footer').forEach((el) => el.remove());
-    
+    clonedContainer.querySelectorAll("script, style, noscript, nav, header, footer").forEach((el) => el.remove());
+
     // Get HTML content (limit size to keep API call reasonable)
     const htmlContent = clonedContainer.innerHTML;
     const maxLength = 20000; // Limit to ~20k chars for profile pages
     const truncatedContent = htmlContent.length > maxLength ? htmlContent.substring(0, maxLength) + "..." : htmlContent;
-    
+
     console.log("[Content] Sending profile page DOM to OpenAI for analysis");
-    
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1499,20 +1514,20 @@ Extract all available information. If a field is not available, use null. Only e
         response_format: { type: "json_object" },
       }),
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error("[Content] OpenAI API call failed for profile extraction:", response.status, errorText);
       return null;
     }
-    
+
     const data = await response.json();
     const extractedInfo = JSON.parse(data.choices?.[0]?.message?.content || "{}");
-    
+
     // Add metadata
     extractedInfo.extractedAt = new Date().toISOString();
     extractedInfo.sourceUrl = window.location.href;
-    
+
     console.log("[Content] Extracted user profile info:", extractedInfo);
     return extractedInfo;
   } catch (error) {
@@ -1528,18 +1543,18 @@ Extract all available information. If a field is not available, use null. Only e
 async function storeUserProfileInfo(profileInfo) {
   try {
     console.log("[Content] Storing user profile information");
-    
+
     if (!profileInfo) {
       console.warn("[Content] No profile info to store");
       return;
     }
-    
+
     // Store in Chrome sync storage so it's available across devices
-    await chrome.storage.sync.set({ 
+    await chrome.storage.sync.set({
       userProfile: profileInfo,
-      userProfileLastUpdated: new Date().toISOString()
+      userProfileLastUpdated: new Date().toISOString(),
     });
-    
+
     console.log("[Content] User profile information stored successfully");
   } catch (error) {
     console.error("[Content] Error storing user profile info:", error);
@@ -1552,29 +1567,30 @@ async function storeUserProfileInfo(profileInfo) {
 async function checkAndStoreUserProfile() {
   try {
     // Check if we're on a profile page
-    const isProfilePage = window.location.pathname.match(/^\/in\/[^\/]+\/?/) || 
-                         window.location.pathname.match(/^\/in\/[^\/]+\/recent-activity\/?$/);
-    
+    const isProfilePage =
+      window.location.pathname.match(/^\/in\/[^\/]+\/?/) ||
+      window.location.pathname.match(/^\/in\/[^\/]+\/recent-activity\/?$/);
+
     if (!isProfilePage) {
       return; // Not on a profile page
     }
-    
+
     // Wait a bit for the page to fully load
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
     // Check if this is the user's own profile
     const isOwnProfile = isUserOwnProfile();
-    
+
     if (!isOwnProfile) {
       console.log("[Content] Not user's own profile, skipping extraction");
       return;
     }
-    
+
     console.log("[Content] Detected user's own profile page, extracting information");
-    
+
     // Extract profile information
     const profileInfo = await extractUserProfileInfo();
-    
+
     if (profileInfo) {
       // Store the profile information
       await storeUserProfileInfo(profileInfo);
@@ -1597,7 +1613,7 @@ const domObserver = new MutationObserver(() => {
     lastUrl = url;
     // Reset processed inputs on navigation to allow re-detection
     // Note: WeakSet will automatically clear when elements are removed from DOM
-    
+
     // Check for profile page when URL changes
     if (profileCheckTimeout) {
       clearTimeout(profileCheckTimeout);
