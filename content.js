@@ -252,9 +252,22 @@ function insertPlaceholderMessage(inputElement) {
   }
   
   try {
-    // Use a minimal approach: just set the text content without focusing
-    // This avoids triggering any navigation or refresh handlers
-    inputElement.textContent = PLACEHOLDER_MESSAGE;
+    // Clear any existing content/placeholder by setting innerHTML with proper structure
+    // LinkedIn's contenteditable uses <p> tags for text content
+    // Setting innerHTML with actual content (not just <p><br></p>) ensures placeholder CSS is removed
+    // Escape HTML to prevent XSS and ensure proper text rendering
+    const escapedMessage = PLACEHOLDER_MESSAGE
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+    inputElement.innerHTML = `<p>${escapedMessage}</p>`;
+    
+    // Remove placeholder attribute if it exists
+    if (inputElement.hasAttribute('data-placeholder')) {
+      inputElement.removeAttribute('data-placeholder');
+    }
     
     // Mark as processed immediately to prevent re-processing
     processedInputs.add(inputElement);
@@ -263,7 +276,7 @@ function insertPlaceholderMessage(inputElement) {
     // This ensures LinkedIn's handlers see the change but don't trigger refresh
     requestAnimationFrame(() => {
       // Only trigger a minimal input event if the element still exists and has our text
-      if (inputElement.isConnected && inputElement.textContent === PLACEHOLDER_MESSAGE) {
+      if (inputElement.isConnected && inputElement.textContent.trim() === PLACEHOLDER_MESSAGE) {
         const inputEvent = new Event('input', { 
           bubbles: true, 
           cancelable: false 
