@@ -292,6 +292,24 @@ function createCategoryCard(categoryName, categoryKey, preferences) {
   autoInsertItem.appendChild(previewGroup);
   prefsGrid.appendChild(autoInsertItem);
 
+  // Custom Instructions (full width)
+  const instructionsItem = document.createElement('div');
+  instructionsItem.className = 'preference-item full-width';
+  
+  const instructionsLabel = document.createElement('label');
+  instructionsLabel.textContent = 'Custom Instructions:';
+  instructionsLabel.htmlFor = `${categoryKey}_instructions`;
+  
+  const instructionsTextarea = document.createElement('textarea');
+  instructionsTextarea.id = `${categoryKey}_instructions`;
+  instructionsTextarea.rows = 3;
+  instructionsTextarea.placeholder = 'Provide specific instructions for this category (e.g., "Always mention interest in remote work", "Ask about company culture")';
+  instructionsTextarea.value = preferences.customInstructions || '';
+  
+  instructionsItem.appendChild(instructionsLabel);
+  instructionsItem.appendChild(instructionsTextarea);
+  prefsGrid.appendChild(instructionsItem);
+
   card.appendChild(header);
   card.appendChild(prefsGrid);
 
@@ -448,7 +466,8 @@ async function saveAllPreferences() {
         closingStyle: document.getElementById(`${categoryKey}_closing`).value,
         formalityLevel: document.getElementById(`${categoryKey}_formality`).value,
         autoInsert: document.getElementById(`${categoryKey}_autoInsert`).checked,
-        previewBeforeInsert: document.getElementById(`${categoryKey}_preview`).checked
+        previewBeforeInsert: document.getElementById(`${categoryKey}_preview`).checked,
+        customInstructions: document.getElementById(`${categoryKey}_instructions`).value.trim()
       };
     });
 
