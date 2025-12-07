@@ -1314,6 +1314,216 @@ async function insertMessage(inputElement, message) {
 }
 
 /**
+ * Stores the category for a conversation (keyed by recipient name)
+ * @param {Object} recipientInfo - Recipient information with name
+ * @param {string} category - The category name
+ */
+async function storeConversationCategory(recipientInfo, category) {
+  try {
+    if (!recipientInfo?.name || !category) {
+      return;
+    }
+
+    console.log("[Content] Storing conversation category:", recipientInfo.name, "->", category);
+
+    // Get existing conversation categories
+    const result = await chrome.storage.local.get(["conversationCategories"]);
+    const categories = result.conversationCategories || {};
+
+    // Store category keyed by recipient name
+    categories[recipientInfo.name] = {
+      category: category,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Save to storage
+    await chrome.storage.local.set({ conversationCategories: categories });
+
+    console.log("[Content] Conversation category stored successfully");
+  } catch (error) {
+    console.error("[Content] Error storing conversation category:", error);
+  }
+}
+
+/**
+ * Gets a color for a category (consistent color mapping)
+ * @param {string} category - The category name
+ * @returns {string} - CSS color value
+ */
+function getCategoryColor(category) {
+  // Color mapping for different categories
+  const colorMap = {
+    "Recruiter inbound": "#0a66c2", // LinkedIn blue
+    "Colleague/friend": "#28a745", // Green
+    "Inbound advice request": "#ffc107", // Yellow/Amber
+    "Inbound meeting request": "#17a2b8", // Cyan
+  };
+
+  // Default color if category not in map
+  const defaultColor = "#6c757d"; // Gray
+
+  // Check for exact match first
+  if (colorMap[category]) {
+    return colorMap[category];
+  }
+
+  // Check for partial match (case-insensitive)
+  const categoryLower = category.toLowerCase();
+  for (const [key, value] of Object.entries(colorMap)) {
+    if (key.toLowerCase() === categoryLower || categoryLower.includes(key.toLowerCase())) {
+      return value;
+    }
+  }
+
+  // Generate a consistent color based on category name hash
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) {
+    hash = category.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash % 360);
+  return `hsl(${hue}, 60%, 50%)`;
+}
+
+/**
+ * Adds a colored category tag to the conversation header
+ * @param {Object} recipientInfo - Recipient information with name
+ * @param {string} category - The category name
+ */
+async function addCategoryTagToConversation(recipientInfo, category) {
+  try {
+    if (!recipientInfo?.name || !category) {
+      return;
+    }
+
+    console.log("[Content] Adding category tag to conversation:", category);
+
+    // Find the conversation header
+    const headerSelectors = [
+      "div.msg-conversation-header__title",
+      "header.msg-conversation-header",
+      'div[class*="conversation-header"]',
+      "div.msg-s-message-list__name",
+      "h2.msg-s-message-list__name",
+    ];
+
+    let headerElement = null;
+    for (const selector of headerSelectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        headerElement = element;
+        break;
+      }
+    }
+
+    if (!headerElement) {
+      console.log("[Content] Could not find conversation header, will retry later");
+      // Retry after a delay
+      setTimeout(() => addCategoryTagToConversation(recipientInfo, category), 1000);
+      return;
+    }
+
+    // Remove existing tag if present
+    const existingTag = headerElement.querySelector(".linky-category-tag");
+    if (existingTag) {
+      existingTag.remove();
+    }
+
+    // Create the tag element
+    const tag = document.createElement("span");
+    tag.className = "linky-category-tag";
+    tag.textContent = category;
+    tag.title = `Category: ${category}`;
+    tag.style.cssText = `
+      display: inline-block;
+      margin-left: 8px;
+      padding: 4px 10px;
+      background-color: ${getCategoryColor(category)};
+      color: white;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      vertical-align: middle;
+      line-height: 1.4;
+      white-space: nowrap;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    `;
+
+    // Insert the tag after the header title/name
+    // Try to find the name element within the header
+    const nameSelectors = ["h1", "h2", "h3", "span.msg-s-message-list__name", "div.msg-s-message-list__name"];
+    let nameElement = null;
+    
+    for (const selector of nameSelectors) {
+      const element = headerElement.querySelector(selector);
+      if (element && element.textContent && element.textContent.trim().length > 0) {
+        nameElement = element;
+        break;
+      }
+    }
+    
+    // If we found a name element, insert after it
+    if (nameElement && nameElement.parentNode) {
+      // Insert after the name element
+      if (nameElement.nextSibling) {
+        nameElement.parentNode.insertBefore(tag, nameElement.nextSibling);
+      } else {
+        nameElement.parentNode.appendChild(tag);
+      }
+    } else {
+      // Fallback: append to header or find a container
+      const container = headerElement.querySelector("div") || headerElement;
+      container.appendChild(tag);
+    }
+
+    console.log("[Content] Category tag added successfully");
+  } catch (error) {
+    console.error("[Content] Error adding category tag:", error);
+  }
+}
+
+/**
+ * Loads and displays category tags for the current conversation
+ * Called when page loads or conversation changes
+ */
+async function loadConversationCategoryTag() {
+  try {
+    // Wait a bit for the page to be ready
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    
+    // Extract recipient info
+    const recipientInfo = extractRecipientInfo();
+    if (!recipientInfo?.name) {
+      // Retry once if recipient info not found
+      setTimeout(async () => {
+        const retryRecipientInfo = extractRecipientInfo();
+        if (retryRecipientInfo?.name) {
+          const result = await chrome.storage.local.get(["conversationCategories"]);
+          const categories = result.conversationCategories || {};
+          const conversationData = categories[retryRecipientInfo.name];
+          if (conversationData?.category) {
+            await addCategoryTagToConversation(retryRecipientInfo, conversationData.category);
+          }
+        }
+      }, 1000);
+      return;
+    }
+
+    // Get stored categories
+    const result = await chrome.storage.local.get(["conversationCategories"]);
+    const categories = result.conversationCategories || {};
+
+    // Check if we have a category for this recipient
+    const conversationData = categories[recipientInfo.name];
+    if (conversationData?.category) {
+      console.log("[Content] Loading category tag for conversation:", conversationData.category);
+      await addCategoryTagToConversation(recipientInfo, conversationData.category);
+    }
+  } catch (error) {
+    console.error("[Content] Error loading conversation category tag:", error);
+  }
+}
+
+/**
  * Stores generated message and context in Chrome storage for history tracking
  * @param {string} message - The generated message text
  * @param {Object} context - The context object used to generate the message
@@ -1454,6 +1664,10 @@ async function generateAndInsertMessage(inputElement) {
     // Step 5: Categorize interaction
     const category = await categorizeInteraction(chatHistoryInfo, recipientInfo);
 
+    // Step 5.5: Store category for this conversation and add tag
+    await storeConversationCategory(recipientInfo, category);
+    await addCategoryTagToConversation(recipientInfo, category);
+
     // Step 6: Get user preferences for this category
     const categoryKey = category.toLowerCase().replace(/\s+/g, "_");
     const result = await chrome.storage.sync.get(["categoryPreferences", "userName"]);
@@ -1540,13 +1754,18 @@ function detectAndInsertChatMessages() {
 // Initialize chat detection
 detectAndInsertChatMessages();
 
+// Load category tags for current conversation
+loadConversationCategoryTag();
+
 // Initialize chat detection on page load
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     detectAndInsertChatMessages();
+    loadConversationCategoryTag();
   });
 } else {
   detectAndInsertChatMessages();
+  loadConversationCategoryTag();
 }
 
 /**
@@ -1886,6 +2105,7 @@ const domObserver = new MutationObserver(() => {
   }
   chatCheckTimeout = setTimeout(() => {
     detectAndInsertChatMessages();
+    loadConversationCategoryTag(); // Also load category tags when conversation changes
   }, 1000);
 });
 domObserver.observe(document, { subtree: true, childList: true });
