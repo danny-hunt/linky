@@ -968,6 +968,56 @@ async function insertMessage(inputElement, message) {
 }
 
 /**
+ * Stores generated message and context in Chrome storage for history tracking
+ * @param {string} message - The generated message text
+ * @param {Object} context - The context object used to generate the message
+ */
+async function storeMessageHistory(message, context) {
+  try {
+    console.log('[Content] Storing message history');
+    
+    // Get existing message history
+    const result = await chrome.storage.local.get(['messageHistory']);
+    const history = result.messageHistory || [];
+    
+    // Create history entry
+    const historyEntry = {
+      id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+      timestamp: new Date().toISOString(),
+      message: message,
+      context: {
+        recipientInfo: context.recipientInfo || null,
+        category: context.category || null,
+        chatHistorySummary: context.chatHistoryInfo?.summary || null,
+        isNewConversation: context.chatHistoryInfo?.isNewConversation || null,
+        keyTopics: context.chatHistoryInfo?.keyTopics || [],
+        userPreferences: context.userPreferences || null,
+        userName: context.userName || null,
+        // Store a simplified version of research results (avoid storing large objects)
+        hasResearchResults: !!(context.researchResults && context.researchResults.searchResults)
+      }
+    };
+    
+    // Add to history (most recent first)
+    history.unshift(historyEntry);
+    
+    // Limit history to last 100 messages to avoid storage issues
+    const maxHistory = 100;
+    if (history.length > maxHistory) {
+      history.splice(maxHistory);
+    }
+    
+    // Save to storage
+    await chrome.storage.local.set({ messageHistory: history });
+    
+    console.log('[Content] Message history stored successfully');
+  } catch (error) {
+    console.error('[Content] Error storing message history:', error);
+    // Don't throw - history storage failure shouldn't break message generation
+  }
+}
+
+/**
  * Inserts an error message into the chat input field
  * @param {HTMLElement} inputElement - The chat input element
  * @param {string} errorMessage - The error message to display
@@ -1070,8 +1120,11 @@ async function generateAndInsertMessage(inputElement) {
     };
 
     const message = await generateMessageDraft(context);
-
-    // Step 8: Insert the generated message
+    
+    // Step 8: Store message history
+    await storeMessageHistory(message, context);
+    
+    // Step 9: Insert the generated message
     await insertMessage(inputElement, message);
 
     console.log("[Content] Message generation and insertion completed successfully");

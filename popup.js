@@ -35,6 +35,8 @@ async function init() {
   try {
     await initializeUI();
     setupEventListeners();
+    setupTabNavigation();
+    loadMessageHistory();
   } catch (error) {
     console.error('Error in initialization:', error);
     showStatus('Error initializing: ' + error.message, 'error');
@@ -359,6 +361,188 @@ function setupEventListeners() {
       saveBtn.click();
     }
   });
+}
+
+/**
+ * Setup tab navigation
+ */
+function setupTabNavigation() {
+  const tabButtons = document.querySelectorAll('.tab-button');
+  const tabContents = document.querySelectorAll('.tab-content');
+  
+  tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      const targetTab = button.dataset.tab;
+      
+      // Update active tab button
+      tabButtons.forEach(btn => btn.classList.remove('active'));
+      button.classList.add('active');
+      
+      // Update active tab content
+      tabContents.forEach(content => content.classList.remove('active'));
+      const targetContent = document.getElementById(`${targetTab}-tab`);
+      if (targetContent) {
+        targetContent.classList.add('active');
+      }
+      
+      // Reload history if switching to history tab
+      if (targetTab === 'history') {
+        loadMessageHistory();
+      }
+    });
+  });
+}
+
+/**
+ * Load and display message history
+ */
+async function loadMessageHistory() {
+  const container = document.getElementById('messageHistoryContainer');
+  if (!container) return;
+  
+  try {
+    container.innerHTML = '<div class="loading-message">Loading message history...</div>';
+    
+    const result = await chrome.storage.local.get(['messageHistory']);
+    const history = result.messageHistory || [];
+    
+    if (history.length === 0) {
+      container.innerHTML = '<div class="empty-message">No message history yet. Generated messages will appear here.</div>';
+      return;
+    }
+    
+    container.innerHTML = '';
+    
+    history.forEach(entry => {
+      const historyCard = createHistoryCard(entry);
+      container.appendChild(historyCard);
+    });
+  } catch (error) {
+    console.error('Error loading message history:', error);
+    container.innerHTML = '<div class="error-message">Error loading message history: ' + error.message + '</div>';
+  }
+}
+
+/**
+ * Create a history card for a message entry
+ */
+function createHistoryCard(entry) {
+  const card = document.createElement('div');
+  card.className = 'history-card';
+  
+  // Format timestamp
+  const date = new Date(entry.timestamp);
+  const formattedDate = date.toLocaleString();
+  
+  // Create card header
+  const header = document.createElement('div');
+  header.className = 'history-card-header';
+  
+  const dateSpan = document.createElement('span');
+  dateSpan.className = 'history-date';
+  dateSpan.textContent = formattedDate;
+  
+  const categorySpan = document.createElement('span');
+  categorySpan.className = 'history-category';
+  categorySpan.textContent = entry.context?.category || 'Unknown';
+  
+  header.appendChild(dateSpan);
+  header.appendChild(categorySpan);
+  
+  // Create message section
+  const messageSection = document.createElement('div');
+  messageSection.className = 'history-message-section';
+  
+  const messageLabel = document.createElement('div');
+  messageLabel.className = 'history-label';
+  messageLabel.textContent = 'Generated Message:';
+  
+  const messageText = document.createElement('div');
+  messageText.className = 'history-message';
+  messageText.textContent = entry.message;
+  
+  messageSection.appendChild(messageLabel);
+  messageSection.appendChild(messageText);
+  
+  // Create context section (collapsible)
+  const contextSection = document.createElement('div');
+  contextSection.className = 'history-context-section';
+  
+  const contextToggle = document.createElement('button');
+  contextToggle.className = 'history-context-toggle';
+  contextToggle.textContent = 'Show Context';
+  contextToggle.addEventListener('click', () => {
+    const isExpanded = contextDetails.style.display !== 'none';
+    contextDetails.style.display = isExpanded ? 'none' : 'block';
+    contextToggle.textContent = isExpanded ? 'Show Context' : 'Hide Context';
+  });
+  
+  const contextDetails = document.createElement('div');
+  contextDetails.className = 'history-context-details';
+  contextDetails.style.display = 'none';
+  
+  // Build context details
+  const context = entry.context || {};
+  
+  if (context.recipientInfo) {
+    const recipientDiv = document.createElement('div');
+    recipientDiv.className = 'context-item';
+    recipientDiv.innerHTML = `<strong>Recipient:</strong> ${context.recipientInfo.name || 'Unknown'}${context.recipientInfo.byline ? ` - ${context.recipientInfo.byline}` : ''}`;
+    contextDetails.appendChild(recipientDiv);
+  }
+  
+  if (context.category) {
+    const categoryDiv = document.createElement('div');
+    categoryDiv.className = 'context-item';
+    categoryDiv.innerHTML = `<strong>Category:</strong> ${context.category}`;
+    contextDetails.appendChild(categoryDiv);
+  }
+  
+  if (context.chatHistorySummary) {
+    const summaryDiv = document.createElement('div');
+    summaryDiv.className = 'context-item';
+    summaryDiv.innerHTML = `<strong>Conversation Summary:</strong> ${context.chatHistorySummary}`;
+    contextDetails.appendChild(summaryDiv);
+  }
+  
+  if (context.isNewConversation !== null) {
+    const newConvDiv = document.createElement('div');
+    newConvDiv.className = 'context-item';
+    newConvDiv.innerHTML = `<strong>New Conversation:</strong> ${context.isNewConversation ? 'Yes' : 'No'}`;
+    contextDetails.appendChild(newConvDiv);
+  }
+  
+  if (context.keyTopics && context.keyTopics.length > 0) {
+    const topicsDiv = document.createElement('div');
+    topicsDiv.className = 'context-item';
+    topicsDiv.innerHTML = `<strong>Key Topics:</strong> ${context.keyTopics.join(', ')}`;
+    contextDetails.appendChild(topicsDiv);
+  }
+  
+  if (context.userPreferences) {
+    const prefsDiv = document.createElement('div');
+    prefsDiv.className = 'context-item';
+    const prefs = context.userPreferences;
+    prefsDiv.innerHTML = `<strong>Preferences:</strong> Tone: ${prefs.tone || 'N/A'}, Length: ${prefs.length || 'N/A'}, Formality: ${prefs.formalityLevel || 'N/A'}`;
+    contextDetails.appendChild(prefsDiv);
+  }
+  
+  if (context.hasResearchResults) {
+    const researchDiv = document.createElement('div');
+    researchDiv.className = 'context-item';
+    researchDiv.innerHTML = `<strong>Research:</strong> Additional research was performed`;
+    contextDetails.appendChild(researchDiv);
+  }
+  
+  contextSection.appendChild(contextToggle);
+  contextSection.appendChild(contextDetails);
+  
+  // Assemble card
+  card.appendChild(header);
+  card.appendChild(messageSection);
+  card.appendChild(contextSection);
+  
+  return card;
 }
 
 /**
