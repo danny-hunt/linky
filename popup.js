@@ -31,22 +31,57 @@ const DEFAULT_PREFERENCES = {
 
 // Initialize when DOM is ready
 async function init() {
-  console.log('Initializing popup, readyState:', document.readyState);
+  console.log('=== Linky Popup Initialization Started ===');
+  console.log('Document readyState:', document.readyState);
+  console.log('Document URL:', window.location.href);
+  
+  // Check if we're in the correct context (popup, not content script)
+  if (window.location.protocol === 'chrome-extension:' || window.location.protocol === 'moz-extension:') {
+    console.log('Running in extension popup context (correct)');
+  } else {
+    console.warn('Warning: Not running in expected popup context. URL:', window.location.href);
+  }
+  
+  // Check if content.js variables exist (they shouldn't in popup context)
+  if (typeof userName !== 'undefined' && typeof buttonElement !== 'undefined') {
+    console.warn('WARNING: content.js variables detected in popup context! This should not happen.');
+  }
+  
   try {
+    // Show loading state
+    const container = document.getElementById('categoryPreferences');
+    if (container) {
+      container.innerHTML = '<div class="loading-message">Loading preferences...</div>';
+    } else {
+      console.error('CRITICAL: categoryPreferences container not found in DOM!');
+    }
+    
     await initializeUI();
     setupEventListeners();
     setupTabNavigation();
     loadMessageHistory();
+    
+    console.log('=== Linky Popup Initialization Completed ===');
   } catch (error) {
     console.error('Error in initialization:', error);
+    console.error('Error stack:', error.stack);
     showStatus('Error initializing: ' + error.message, 'error');
+    
+    // Show error in container
+    const container = document.getElementById('categoryPreferences');
+    if (container) {
+      container.innerHTML = '<div class="status error">Error initializing: ' + error.message + '<br>Check console for details.</div>';
+    }
   }
 }
 
+// Ensure initialization happens
 if (document.readyState === 'loading') {
+  console.log('Waiting for DOMContentLoaded...');
   document.addEventListener('DOMContentLoaded', init);
 } else {
   // DOM is already ready (common for popup windows)
+  console.log('DOM already ready, initializing immediately');
   init();
 }
 
@@ -55,6 +90,8 @@ if (document.readyState === 'loading') {
  */
 async function initializeUI() {
   try {
+    console.log('Starting UI initialization...');
+    
     // Load saved preferences
     let result;
     try {
@@ -79,6 +116,7 @@ async function initializeUI() {
     const userNameInput = document.getElementById('userName');
     if (!userNameInput) {
       console.error('userName input element not found');
+      showStatus('Error: userName input element not found', 'error');
       return;
     }
     if (result.userName) {
@@ -86,14 +124,37 @@ async function initializeUI() {
     }
 
     // Initialize categories (merge defaults with saved custom categories)
-    let categories = result.categories || DEFAULT_CATEGORIES;
+    let categories = result.categories;
     
-    // Ensure categories is an array and not empty
-    if (!Array.isArray(categories) || categories.length === 0) {
+    // Ensure categories is an array and not empty - always fall back to defaults
+    if (!categories || !Array.isArray(categories) || categories.length === 0) {
       console.warn('Categories is not a valid array, using defaults');
-      categories = DEFAULT_CATEGORIES;
+      categories = [...DEFAULT_CATEGORIES]; // Create a new array
       // Save defaults to storage
-      await chrome.storage.sync.set({ categories: DEFAULT_CATEGORIES });
+      try {
+        await chrome.storage.sync.set({ categories: categories });
+        console.log('Saved default categories to storage');
+      } catch (e) {
+        console.error('Error saving default categories:', e);
+      }
+    } else {
+      // Validate each category is a string
+      categories = categories.filter(cat => cat && typeof cat === 'string');
+      if (categories.length === 0) {
+        console.warn('All categories were invalid, using defaults');
+        categories = [...DEFAULT_CATEGORIES];
+        try {
+          await chrome.storage.sync.set({ categories: categories });
+        } catch (e) {
+          console.error('Error saving default categories:', e);
+        }
+      }
+    }
+    
+    // Final safety check - ensure we have at least the defaults
+    if (!categories || categories.length === 0) {
+      console.error('Categories is still empty after all checks, forcing defaults');
+      categories = [...DEFAULT_CATEGORIES];
     }
     
     const preferences = result.categoryPreferences || {};
@@ -102,14 +163,40 @@ async function initializeUI() {
     console.log('Number of categories:', categories.length);
     console.log('Preferences:', preferences);
 
+    // Verify the container exists before rendering
+    const container = document.getElementById('categoryPreferences');
+    if (!container) {
+      console.error('categoryPreferences container not found in DOM');
+      showStatus('Error: Settings container not found. Please refresh the popup.', 'error');
+      return;
+    }
+
     // Render category preferences
-    renderCategoryPreferences(categories, preferences);
+    try {
+      renderCategoryPreferences(categories, preferences);
+    } catch (renderError) {
+      console.error('Error in renderCategoryPreferences:', renderError);
+      showStatus('Error rendering category preferences: ' + renderError.message, 'error');
+      // Show a fallback message in the container
+      container.innerHTML = '<div class="status error">Error loading category preferences. Please check the console for details.</div>';
+    }
 
     // Setup add category handler
-    setupAddCategoryHandler(categories);
+    try {
+      setupAddCategoryHandler(categories);
+    } catch (handlerError) {
+      console.error('Error setting up add category handler:', handlerError);
+    }
+    
+    console.log('UI initialization completed');
   } catch (error) {
     console.error('Error initializing UI:', error);
     showStatus('Error loading preferences: ' + error.message, 'error');
+    // Try to show error in the container as well
+    const container = document.getElementById('categoryPreferences');
+    if (container) {
+      container.innerHTML = '<div class="status error">Error initializing settings: ' + error.message + '</div>';
+    }
   }
 }
 
@@ -121,42 +208,84 @@ function renderCategoryPreferences(categories, savedPreferences) {
     const container = document.getElementById('categoryPreferences');
     if (!container) {
       console.error('categoryPreferences container not found');
+      showStatus('Error: Settings container not found', 'error');
       return;
     }
     
     console.log('Rendering categories:', categories);
+    console.log('Container found:', !!container);
     container.innerHTML = '';
 
-    if (!categories || categories.length === 0) {
-      console.warn('No categories to render');
-      return;
+    // Ensure we have valid categories
+    if (!categories || !Array.isArray(categories) || categories.length === 0) {
+      console.warn('No valid categories to render, using defaults');
+      categories = [...DEFAULT_CATEGORIES];
     }
 
-    categories.forEach(category => {
+    let cardsCreated = 0;
+    let errorsEncountered = [];
+
+    categories.forEach((category, index) => {
       try {
+        if (!category || typeof category !== 'string') {
+          console.warn(`Invalid category at index ${index}:`, category);
+          return;
+        }
+        
         const categoryKey = category.toLowerCase().replace(/\s+/g, '_');
         const prefs = savedPreferences[categoryKey] || { ...DEFAULT_PREFERENCES };
         
+        console.log(`Creating card for category: ${category} (key: ${categoryKey})`);
         const card = createCategoryCard(category, categoryKey, prefs);
+        
+        if (!card) {
+          console.error(`createCategoryCard returned null for category: ${category}`);
+          errorsEncountered.push(category);
+          return;
+        }
+        
         container.appendChild(card);
+        cardsCreated++;
+        console.log(`Successfully created card for: ${category}`);
       } catch (error) {
         console.error(`Error creating card for category ${category}:`, error);
+        errorsEncountered.push(category);
       }
     });
     
     // Verify cards were created
     const createdCards = container.querySelectorAll('.category-card');
-    console.log(`Created ${createdCards.length} category cards`);
+    console.log(`Created ${createdCards.length} category cards (expected ${categories.length})`);
     
-    if (createdCards.length === 0 && categories.length > 0) {
-      console.error('No cards were created despite having categories');
+    if (createdCards.length === 0) {
+      console.error('No cards were created');
       const errorMsg = document.createElement('div');
       errorMsg.className = 'status error';
-      errorMsg.textContent = 'Error: Could not render category preferences. Check console for details.';
+      errorMsg.innerHTML = `
+        <strong>Error: Could not render category preferences</strong><br>
+        Categories attempted: ${categories.length}<br>
+        Errors: ${errorsEncountered.length > 0 ? errorsEncountered.join(', ') : 'Unknown'}<br>
+        Please check the browser console for details.
+      `;
       container.appendChild(errorMsg);
+      showStatus('Error: Could not render category preferences', 'error');
+    } else if (createdCards.length < categories.length) {
+      console.warn(`Only ${createdCards.length} of ${categories.length} cards were created`);
+      if (errorsEncountered.length > 0) {
+        const warningMsg = document.createElement('div');
+        warningMsg.className = 'status error';
+        warningMsg.textContent = `Warning: Some categories could not be rendered: ${errorsEncountered.join(', ')}`;
+        container.appendChild(warningMsg);
+      }
+    } else {
+      console.log('All category cards rendered successfully');
     }
   } catch (error) {
     console.error('Error rendering category preferences:', error);
+    const container = document.getElementById('categoryPreferences');
+    if (container) {
+      container.innerHTML = '<div class="status error">Error rendering preferences: ' + error.message + '</div>';
+    }
     showStatus('Error rendering preferences: ' + error.message, 'error');
   }
 }
