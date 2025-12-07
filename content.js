@@ -1598,10 +1598,18 @@ function getCategoryColor(category) {
  * Adds a colored category tag to the conversation header
  * @param {Object} recipientInfo - Recipient information with name
  * @param {string} category - The category name
+ * @param {number} retryCount - Number of retries attempted (default: 0, max: 3)
  */
-async function addCategoryTagToConversation(recipientInfo, category) {
+async function addCategoryTagToConversation(recipientInfo, category, retryCount = 0) {
   try {
     if (!recipientInfo?.name || !category) {
+      return;
+    }
+
+    // Limit retries to prevent infinite loops
+    const MAX_RETRIES = 3;
+    if (retryCount >= MAX_RETRIES) {
+      console.log("[Content] Max retries reached for adding category tag, giving up");
       return;
     }
 
@@ -1626,9 +1634,11 @@ async function addCategoryTagToConversation(recipientInfo, category) {
     }
 
     if (!headerElement) {
-      console.log("[Content] Could not find conversation header, will retry later");
-      // Retry after a delay
-      setTimeout(() => addCategoryTagToConversation(recipientInfo, category), 1000);
+      console.log("[Content] Could not find conversation header, will retry later (attempt " + (retryCount + 1) + "/" + MAX_RETRIES + ")");
+      // Retry with exponential backoff: 3s, 5s, 8s
+      const delays = [3000, 5000, 8000];
+      const delay = delays[retryCount] || 8000;
+      setTimeout(() => addCategoryTagToConversation(recipientInfo, category, retryCount + 1), delay);
       return;
     }
 
@@ -1703,7 +1713,7 @@ async function loadConversationCategoryTag() {
     // Extract recipient info
     const recipientInfo = await extractRecipientInfo();
     if (!recipientInfo?.name) {
-      // Retry once if recipient info not found
+      // Retry once if recipient info not found (with longer delay)
       setTimeout(async () => {
         const retryRecipientInfo = await extractRecipientInfo();
         if (retryRecipientInfo?.name) {
@@ -1714,7 +1724,7 @@ async function loadConversationCategoryTag() {
             await addCategoryTagToConversation(retryRecipientInfo, conversationData.category);
           }
         }
-      }, 1000);
+      }, 3000); // Increased from 1000ms to 3000ms
       return;
     }
 
