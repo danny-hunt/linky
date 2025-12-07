@@ -1247,7 +1247,22 @@ async function callLangCache(
 
           // Check for API errors in response
           if (response.error) {
-            console.error("[Content] LangCache API error:", response.error);
+            const errorContext = {
+              error: response.error,
+              endpoint: endpoint,
+              langCacheUrl: langCacheUrl,
+              langCacheId: langCacheId,
+              model: model,
+              messageCount: messages?.length || 0,
+              fullResponse: response,
+            };
+            console.error("[Content] LangCache API error - Full context:", errorContext);
+            console.error("[Content] LangCache API error - Summary:", {
+              errorMessage: response.error,
+              endpoint: endpoint,
+              langCacheId: langCacheId,
+              model: model,
+            });
             reject(new Error(response.error));
             return;
           }
