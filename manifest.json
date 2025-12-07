@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "LinkedIn Extension",
+  "name": "Linky",
   "version": "1.0.0",
   "description": "A Chrome extension that works on LinkedIn with a settings menu",
   "permissions": ["storage", "activeTab"],

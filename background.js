@@ -9,7 +9,7 @@
 
 // Background service worker for the extension
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('LinkedIn Extension installed');
+  console.log('Linky installed');
 });
 
 // Optional: Handle extension icon click
