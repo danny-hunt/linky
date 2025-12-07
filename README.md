@@ -61,12 +61,27 @@ The extension requires an OpenAI API key to generate message drafts. For local d
 2. Open `secrets.js` and replace `'your-openai-api-key-here'` with your actual OpenAI API key
 3. Get your API key from: https://platform.openai.com/api-keys
 
+**Redis LangCache Configuration (Optional):**
+
+The extension supports Redis LangCache for semantic caching of message generation. This can significantly reduce API costs by caching semantically similar requests.
+
+**LangCache Setup Steps:**
+
+1. Set up a Redis LangCache instance (see https://redis.io/docs/latest/develop/ai/langcache/)
+2. Open `secrets.js` and configure:
+   - `LANGCACHE_URL` - Your LangCache endpoint URL (e.g., `https://your-langcache-instance.redis.com`)
+   - `LANGCACHE_API_KEY` - Your LangCache API key
+   - `LANGCACHE_ID` - Your LangCache instance ID
+3. **Important**: Add your LangCache URL domain to `manifest.json` under `host_permissions` for Chrome to allow the requests
+   - Example: If your URL is `https://langcache.example.com`, add `"https://langcache.example.com/*"` to the `host_permissions` array
+
 **Security Notes:**
 
 - `secrets.js` is gitignored and will never be committed to the repository
 - `secrets.example.js` is a template file that can be safely committed
 - The extension will first check `secrets.js` for the API key, then fall back to Chrome storage
 - For production use, consider using Chrome storage instead of hardcoded keys
+- LangCache credentials are also stored in `secrets.js` and are gitignored
 
 ### File Structure
 

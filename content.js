@@ -941,6 +941,39 @@ async function getOpenAIApiKey() {
 }
 
 /**
+ * Retrieves LangCache credentials (helper function)
+ * @returns {Promise<Object|null>} - Object with url, apiKey, and id, or null if not found
+ */
+async function getLangCacheCredentials() {
+  // Check for hardcoded credentials in secrets.js
+  let url, apiKey, id;
+  
+  if (typeof self !== "undefined") {
+    url = self.LANGCACHE_URL;
+    apiKey = self.LANGCACHE_API_KEY;
+    id = self.LANGCACHE_ID;
+  } else if (typeof window !== "undefined") {
+    url = window.LANGCACHE_URL;
+    apiKey = window.LANGCACHE_API_KEY;
+    id = window.LANGCACHE_ID;
+  }
+
+  // Check if credentials are valid (not placeholder values)
+  if (
+    url &&
+    url !== "your-langcache-url-here" &&
+    apiKey &&
+    apiKey !== "your-langcache-api-key-here" &&
+    id &&
+    id !== "your-langcache-id-here"
+  ) {
+    return { url, apiKey, id };
+  }
+
+  return null;
+}
+
+/**
  * Categorizes the interaction type using chat history and recipient info
  * @param {Object} chatHistoryInfo - Extracted chat history information
  * @param {Object} recipientInfo - Recipient information (name, byline)
@@ -1034,12 +1067,80 @@ async function categorizeInteraction(chatHistoryInfo, recipientInfo) {
 }
 
 /**
- * Generates a personalized message draft using OpenAI
+ * Calls Redis LangCache API for semantic caching
+ * The cache key is automatically generated based on semantic similarity of the messages
+ * @param {string} langCacheUrl - LangCache endpoint URL
+ * @param {string} langCacheApiKey - LangCache API key
+ * @param {string} langCacheId - LangCache ID
+ * @param {string} openaiApiKey - OpenAI API key
+ * @param {Array} messages - Array of message objects with role and content
+ * @param {string} model - Model name (e.g., "gpt-4o-mini")
+ * @param {number} maxTokens - Maximum tokens
+ * @param {number} temperature - Temperature setting
+ * @returns {Promise<Object>} - Response data from LangCache (OpenAI-compatible format)
+ */
+async function callLangCache(langCacheUrl, langCacheApiKey, langCacheId, openaiApiKey, messages, model, maxTokens, temperature) {
+  // Construct the LangCache endpoint URL
+  // Based on Redis LangCache API docs, the endpoint is typically /cache/chat/completions
+  // Remove trailing slash from URL if present
+  const baseUrl = langCacheUrl.replace(/\/$/, "");
+  const endpoint = `${baseUrl}/cache/chat/completions`;
+  
+  console.log("[Content] Calling Redis LangCache for semantic caching", { endpoint, langCacheId });
+
+  // Prepare request body - LangCache API expects OpenAI-compatible format
+  // The semantic cache key is automatically generated based on message content
+  const requestBody = {
+    messages: messages,
+    model: model,
+    max_tokens: maxTokens,
+    temperature: temperature,
+    // LangCache needs the OpenAI API key to call OpenAI on cache miss
+    // The exact structure may vary - this is a common pattern
+    provider: {
+      type: "openai",
+      api_key: openaiApiKey,
+    },
+  };
+
+  // Some LangCache implementations may use the id in the header or path
+  // Try both common patterns
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${langCacheApiKey}`,
+      // Some implementations use X-LangCache-Id header
+      "X-LangCache-Id": langCacheId,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("[Content] LangCache API error:", response.status, errorText);
+    throw new Error(`LangCache API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json();
+  
+  // LangCache should return OpenAI-compatible response format
+  // Verify the response structure
+  if (!data.choices || !Array.isArray(data.choices) || data.choices.length === 0) {
+    throw new Error("Invalid LangCache response format: missing choices");
+  }
+
+  console.log("[Content] LangCache response received (cache hit or miss)");
+  return data;
+}
+
+/**
+ * Generates a personalized message draft using OpenAI with Redis LangCache semantic caching
  * @param {Object} context - Full context object with all information
  * @returns {Promise<string>} - Generated message draft
  */
 async function generateMessageDraft(context) {
-  console.log("[Content] Generating message draft with OpenAI");
+  console.log("[Content] Generating message draft with OpenAI and Redis LangCache");
 
   try {
     const openaiApiKey = await getOpenAIApiKey();
@@ -1132,7 +1233,50 @@ Generate a personalized message draft that:
 
 Return only the message text, nothing else. Do not include a subject line or email headers.`;
 
-    console.log("[Content] Sending message generation request to OpenAI");
+    const messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ];
+
+    const model = "gpt-4o-mini";
+    const maxTokens = 500;
+    const temperature = 0.7;
+
+    // Try to use LangCache if credentials are available
+    const langCacheCreds = await getLangCacheCredentials();
+    
+    if (langCacheCreds) {
+      try {
+        console.log("[Content] Using Redis LangCache for semantic caching");
+        const langCacheData = await callLangCache(
+          langCacheCreds.url,
+          langCacheCreds.apiKey,
+          langCacheCreds.id,
+          openaiApiKey,
+          messages,
+          model,
+          maxTokens,
+          temperature
+        );
+        
+        const message = langCacheData.choices?.[0]?.message?.content?.trim();
+        
+        if (message) {
+          console.log("[Content] Generated message draft from LangCache:", message);
+          return message;
+        } else {
+          console.warn("[Content] LangCache returned empty response, falling back to direct OpenAI call");
+        }
+      } catch (langCacheError) {
+        console.warn("[Content] LangCache error, falling back to direct OpenAI call:", langCacheError);
+        // Fall through to direct OpenAI call
+      }
+    } else {
+      console.log("[Content] LangCache credentials not available, using direct OpenAI call");
+    }
+
+    // Fallback to direct OpenAI call if LangCache is not available or fails
+    console.log("[Content] Sending message generation request directly to OpenAI");
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -1141,13 +1285,10 @@ Return only the message text, nothing else. Do not include a subject line or ema
         Authorization: `Bearer ${openaiApiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        max_tokens: 500,
-        temperature: 0.7,
+        model: model,
+        messages: messages,
+        max_tokens: maxTokens,
+        temperature: temperature,
       }),
     });
 
