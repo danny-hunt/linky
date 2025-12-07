@@ -951,12 +951,40 @@ async function insertMessage(inputElement, message) {
     // Focus the element first
     inputElement.focus();
     
-    // Insert text using innerHTML with <p> tag (LinkedIn's expected structure)
-    inputElement.innerHTML = `<p>${message}</p>`;
+    // Convert newlines to HTML breaks
+    // Escape HTML to prevent XSS, then convert \n to <br>
+    const escapeHtml = (text) => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    };
+    
+    const escapedMessage = escapeHtml(message);
+    // Convert newlines to <br> tags
+    const htmlContent = `<p>${escapedMessage.replace(/\n/g, '<br>')}</p>`;
+    
+    // Insert text using innerHTML with proper formatting
+    inputElement.innerHTML = htmlContent;
     
     // Trigger input event so LinkedIn recognizes the change
-    // Using InputEvent with bubbles: true as recommended
     inputElement.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    
+    // Workaround: Add and remove a space to trigger LinkedIn's formatting
+    // This ensures newlines are properly rendered in the UI
+    // LinkedIn's contenteditable needs this trigger to format newlines correctly
+    setTimeout(() => {
+      // Add a space at the end inside the paragraph
+      const htmlWithSpace = htmlContent.replace('</p>', ' </p>');
+      inputElement.innerHTML = htmlWithSpace;
+      // Trigger input event
+      inputElement.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      // Remove the space and restore proper HTML
+      setTimeout(() => {
+        inputElement.innerHTML = htmlContent;
+        // Trigger input event again to ensure LinkedIn updates
+        inputElement.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      }, 10);
+    }, 50);
     
     processedInputs.add(inputElement);
     console.log('[Content] Auto-inserted message into chat input');
