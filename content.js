@@ -206,83 +206,71 @@ function showStatus(message, type) {
 /**
  * Detects LinkedIn chat message input fields
  * LinkedIn uses contenteditable divs for message inputs
+ * Based on actual LinkedIn structure: div.msg-form__contenteditable[contenteditable="true"]
  */
 function findChatInputFields() {
   const inputs = [];
   
-  // Look for contenteditable divs that are likely message inputs
-  // Common LinkedIn selectors for message input fields
-  const selectors = [
-    'div[contenteditable="true"][role="textbox"]',
-    'div.msg-form__contenteditable[contenteditable="true"]',
-    'div[contenteditable="true"][data-placeholder*="message" i]',
-    'div[contenteditable="true"][aria-label*="message" i]',
-  ];
+  // Primary selector: LinkedIn's actual message input field
+  const primarySelector = 'div.msg-form__contenteditable[contenteditable="true"][role="textbox"]';
+  const elements = document.querySelectorAll(primarySelector);
   
-  // Try specific selectors first
-  for (const selector of selectors) {
-    const elements = document.querySelectorAll(selector);
-    elements.forEach(el => {
-      // Check if it's in a messaging context (not other contenteditable areas)
-      const isInMessagingArea = el.closest('[class*="msg-form"], [class*="messaging"], [class*="conversation"]') ||
-                                 el.closest('div[role="textbox"]')?.parentElement?.querySelector('button[aria-label*="Send" i]');
-      
-      if (isInMessagingArea && !processedInputs.has(el)) {
+  elements.forEach(el => {
+    // Verify it's in a message form (has a send button nearby)
+    const form = el.closest('form.msg-form');
+    if (form) {
+      const hasSendButton = form.querySelector('button.msg-form__send-button, button[type="submit"]');
+      if (hasSendButton && !processedInputs.has(el)) {
         inputs.push(el);
       }
-    });
-  }
-  
-  // Fallback: find any contenteditable in messaging containers
-  if (inputs.length === 0) {
-    const messagingContainers = document.querySelectorAll('[class*="msg-form"], [class*="messaging"], [class*="conversation"]');
-    messagingContainers.forEach(container => {
-      const contentEditables = container.querySelectorAll('div[contenteditable="true"]');
-      contentEditables.forEach(el => {
-        // Check if it's likely a message input (not a message display)
-        const hasSendButton = container.querySelector('button[aria-label*="Send" i], button[aria-label*="send" i]');
-        const isEmpty = !el.textContent || el.textContent.trim() === '';
-        
-        if (hasSendButton && isEmpty && !processedInputs.has(el)) {
-          inputs.push(el);
-        }
-      });
-    });
-  }
+    }
+  });
   
   return inputs;
 }
 
 /**
  * Inserts placeholder message into a chat input field
+ * Uses minimal DOM manipulation to avoid triggering LinkedIn's refresh handlers
  */
 function insertPlaceholderMessage(inputElement) {
   if (!inputElement || processedInputs.has(inputElement)) {
     return false;
   }
   
-  // Check if input is already filled
-  const currentText = inputElement.textContent || inputElement.innerText || '';
-  if (currentText.trim() !== '') {
+  // Check if input is already filled (check both textContent and innerHTML)
+  const currentText = inputElement.textContent || '';
+  const currentHTML = inputElement.innerHTML || '';
+  // LinkedIn's empty state is typically <p><br></p> or just <br>
+  const isEmpty = currentText.trim() === '' || 
+                  currentHTML.trim() === '' || 
+                  currentHTML.trim() === '<p><br></p>' ||
+                  currentHTML.trim() === '<br>';
+  
+  if (!isEmpty) {
     return false;
   }
   
   try {
-    // For contenteditable divs, we need to set innerHTML or textContent
-    // and trigger input events
+    // Use a minimal approach: just set the text content without focusing
+    // This avoids triggering any navigation or refresh handlers
     inputElement.textContent = PLACEHOLDER_MESSAGE;
-    inputElement.innerText = PLACEHOLDER_MESSAGE;
     
-    // Trigger input event so LinkedIn's UI recognizes the change
-    const inputEvent = new Event('input', { bubbles: true, cancelable: true });
-    inputElement.dispatchEvent(inputEvent);
-    
-    // Also trigger other events that might be needed
-    const keyupEvent = new Event('keyup', { bubbles: true, cancelable: true });
-    inputElement.dispatchEvent(keyupEvent);
-    
-    // Mark as processed
+    // Mark as processed immediately to prevent re-processing
     processedInputs.add(inputElement);
+    
+    // Use requestAnimationFrame to trigger the input event after the DOM update
+    // This ensures LinkedIn's handlers see the change but don't trigger refresh
+    requestAnimationFrame(() => {
+      // Only trigger a minimal input event if the element still exists and has our text
+      if (inputElement.isConnected && inputElement.textContent === PLACEHOLDER_MESSAGE) {
+        const inputEvent = new Event('input', { 
+          bubbles: true, 
+          cancelable: false 
+        });
+        inputElement.dispatchEvent(inputEvent);
+      }
+    });
     
     console.log('Auto-inserted placeholder message into chat input');
     return true;
@@ -294,12 +282,27 @@ function insertPlaceholderMessage(inputElement) {
 
 /**
  * Scans for chat interfaces and auto-inserts placeholder messages
+ * Only processes empty inputs that haven't been processed yet
+ * Adds a small delay to ensure LinkedIn's UI is stable
  */
 function detectAndInsertChatMessages() {
   const chatInputs = findChatInputFields();
   
   chatInputs.forEach(input => {
-    insertPlaceholderMessage(input);
+    // Only insert if the input is visible and not already processed
+    if (input.offsetParent !== null && !processedInputs.has(input)) {
+      // Add a small delay to ensure the input is fully ready
+      // This prevents triggering LinkedIn's refresh handlers
+      setTimeout(() => {
+        // Double-check the input is still valid and empty
+        if (input.isConnected && !processedInputs.has(input)) {
+          const currentText = input.textContent || '';
+          if (currentText.trim() === '' || currentText.trim() === '\n') {
+            insertPlaceholderMessage(input);
+          }
+        }
+      }, 300);
+    }
   });
 }
 
@@ -334,12 +337,13 @@ const domObserver = new MutationObserver(() => {
   
   // Also check for new chat interfaces when DOM changes
   // Use debouncing to avoid excessive checks
+  // Increased delay to let LinkedIn's UI settle after changes
   if (chatCheckTimeout) {
     clearTimeout(chatCheckTimeout);
   }
   chatCheckTimeout = setTimeout(() => {
     detectAndInsertChatMessages();
-  }, 500);
+  }, 1000);
 });
 domObserver.observe(document, { subtree: true, childList: true });
 
