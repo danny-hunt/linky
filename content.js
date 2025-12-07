@@ -1884,9 +1884,8 @@ async function generateAndInsertMessage(inputElement) {
     // Step 5: Categorize interaction
     const category = await categorizeInteraction(chatHistoryInfo, recipientInfo);
 
-    // Step 5.5: Store category for this conversation and add tag
+    // Step 5.5: Store category for this conversation (for prompting purposes)
     await storeConversationCategory(recipientInfo, category);
-    await addCategoryTagToConversation(recipientInfo, category);
 
     // Step 6: Get user preferences for this category
     const categoryKey = category.toLowerCase().replace(/\s+/g, "_");
@@ -1974,18 +1973,13 @@ function detectAndInsertChatMessages() {
 // Initialize chat detection
 detectAndInsertChatMessages();
 
-// Load category tags for current conversation
-loadConversationCategoryTag();
-
 // Initialize chat detection on page load
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     detectAndInsertChatMessages();
-    loadConversationCategoryTag();
   });
 } else {
   detectAndInsertChatMessages();
-  loadConversationCategoryTag();
 }
 
 /**
@@ -2325,7 +2319,6 @@ const domObserver = new MutationObserver(() => {
   }
   chatCheckTimeout = setTimeout(() => {
     detectAndInsertChatMessages();
-    loadConversationCategoryTag(); // Also load category tags when conversation changes
   }, 1000);
 });
 domObserver.observe(document, { subtree: true, childList: true });
