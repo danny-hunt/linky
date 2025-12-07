@@ -810,7 +810,7 @@ async function generateMessageDraft(context) {
         }\n- Formality: ${userPreferences.formalityLevel || "moderate"}`
       : "Use professional, medium-length, moderate formality.";
 
-    const systemPrompt = `You are a LinkedIn message draft generator. Generate a personalized, contextually appropriate LinkedIn message draft based on the provided information. The message should be ready to send (or edit) and should match the user's preferences for tone, length, and formality.`;
+    const systemPrompt = `You are a LinkedIn message draft generator. Generate a personalized, contextually appropriate LinkedIn message draft based on the provided information. The message should be ready to send (or edit) and should match the user's preferences for tone, length, and formality. LinkedIn messages are direct chat messages, not emails - they should be concise, conversational, and professional without email formatting.`;
 
     const userPrompt = `Generate a LinkedIn message draft with the following context:
 
@@ -833,9 +833,12 @@ Generate a personalized message draft that:
 - Matches the specified tone, length, and formality preferences
 - References relevant context from the conversation or recipient info when appropriate
 - Is professional and ready to send (user will review and edit if needed)
-- Does NOT include placeholders or [INSERT] markers
+- Is formatted as a LinkedIn chat message (NOT an email - no subject line, no email-style formatting)
+- Is concise and direct, not overly formal or email-like
+- Is complete and specific - do NOT include any placeholders, square brackets, [INSERT] markers, or anything for the user to fill in
+- Uses specific details from the context provided rather than generic placeholders
 
-Return only the message text, nothing else.`;
+Return only the message text, nothing else. Do not include a subject line or email headers.`;
 
     console.log("[Content] Sending message generation request to OpenAI");
 
