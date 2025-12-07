@@ -57,7 +57,7 @@ function extractRecipientInfo() {
     // Find the message form first to scope our search to the current conversation
     const messageForm = document.querySelector("form.msg-form, div.msg-form__contenteditable");
     let conversationContainer = null;
-    
+
     if (messageForm) {
       // Find the conversation container by walking up the DOM tree
       let container = messageForm;
@@ -77,7 +77,7 @@ function extractRecipientInfo() {
         }
       }
     }
-    
+
     // LinkedIn chat header typically contains recipient info
     // Expanded selectors for recipient name in chat interface
     // Prioritize selectors that are scoped to conversation headers
@@ -130,7 +130,7 @@ function extractRecipientInfo() {
 
     let name = null;
     let usedSelector = null;
-    
+
     // First, try to find name within conversation container (more reliable)
     if (conversationContainer) {
       for (const selector of nameSelectors) {
@@ -169,7 +169,9 @@ function extractRecipientInfo() {
 
                 // Also check if it looks like a name (contains letters, possibly spaces, not all caps unless short)
                 const looksLikeName =
-                  /^[a-zA-Z\s\-'\.]+$/.test(text) && text.length >= 2 && (text.length <= 3 || text.toUpperCase() !== text); // Not all caps unless very short
+                  /^[a-zA-Z\s\-'\.]+$/.test(text) &&
+                  text.length >= 2 &&
+                  (text.length <= 3 || text.toUpperCase() !== text); // Not all caps unless very short
 
                 if (!isUIText && looksLikeName) {
                   name = text;
@@ -186,7 +188,7 @@ function extractRecipientInfo() {
         }
       }
     }
-    
+
     // If no name found in container, try document-wide search (fallback)
     if (!name) {
       for (const selector of nameSelectors) {
@@ -225,7 +227,9 @@ function extractRecipientInfo() {
 
                 // Also check if it looks like a name (contains letters, possibly spaces, not all caps unless short)
                 const looksLikeName =
-                  /^[a-zA-Z\s\-'\.]+$/.test(text) && text.length >= 2 && (text.length <= 3 || text.toUpperCase() !== text); // Not all caps unless very short
+                  /^[a-zA-Z\s\-'\.]+$/.test(text) &&
+                  text.length >= 2 &&
+                  (text.length <= 3 || text.toUpperCase() !== text); // Not all caps unless very short
 
                 if (!isUIText && looksLikeName) {
                   name = text;
@@ -271,17 +275,17 @@ function extractRecipientInfo() {
 
       // Look for any visible h2/h1 near the message form
       if (messageForm && conversationContainer) {
-          const headings = container.querySelectorAll(
-            'h1, h2, h3, [class*="name"], [class*="title"], [class*="header"]'
-          );
-          console.log("[Content] Found headings in container:", headings.length);
-          for (const heading of headings) {
-            const text = heading.textContent?.trim();
-            console.log("[Content] Checking heading:", { text, classes: heading.className });
-            if (text && text.length > 0 && text.length < 100) {
-              // More lenient filtering - only exclude if it's clearly UI text
-              const lowerText = text.toLowerCase();
-              if (
+        const headings = conversationContainer.querySelectorAll(
+          'h1, h2, h3, [class*="name"], [class*="title"], [class*="header"]'
+        );
+        console.log("[Content] Found headings in container:", headings.length);
+        for (const heading of headings) {
+          const text = heading.textContent?.trim();
+          console.log("[Content] Checking heading:", { text, classes: heading.className });
+          if (text && text.length > 0 && text.length < 100) {
+            // More lenient filtering - only exclude if it's clearly UI text
+            const lowerText = text.toLowerCase();
+            if (
               !lowerText.includes("linkedin") &&
               !lowerText.includes("messaging") &&
               !lowerText.includes("conversation") &&
@@ -289,40 +293,39 @@ function extractRecipientInfo() {
               !lowerText.includes("new message") &&
               !lowerText.includes("search") &&
               text.length > 1
-              ) {
-                // At least 2 characters
-                name = text;
-                usedSelector = "broad-search";
-                console.log("[Content] Found recipient name via broad search:", name);
-                break;
-              }
+            ) {
+              // At least 2 characters
+              name = text;
+              usedSelector = "broad-search";
+              console.log("[Content] Found recipient name via broad search:", name);
+              break;
             }
           }
         }
+      }
 
-        // If still no name, try searching the entire visible area above the message form
-        if (!name) {
-          // Get all headings in the viewport
-          const allHeadings = document.querySelectorAll("h1, h2");
-          for (const heading of allHeadings) {
-            // Check if heading is visible and above the message form
-            const rect = heading.getBoundingClientRect();
-            const formRect = messageForm.getBoundingClientRect();
-            if (rect.bottom < formRect.top && rect.width > 0 && rect.height > 0) {
-              const text = heading.textContent?.trim();
-              if (text && text.length > 1 && text.length < 100) {
-                const lowerText = text.toLowerCase();
-                // Very lenient - just exclude obvious UI elements
-                if (
-                  !lowerText.match(/^(linkedin|messaging|conversation|new message|search|filter)$/i) &&
-                  !lowerText.startsWith("linkedin") &&
-                  text.length > 1
-                ) {
-                  name = text;
-                  usedSelector = "viewport-search";
-                  console.log("[Content] Found recipient name via viewport search:", name);
-                  break;
-                }
+      // If still no name, try searching the entire visible area above the message form
+      if (!name) {
+        // Get all headings in the viewport
+        const allHeadings = document.querySelectorAll("h1, h2");
+        for (const heading of allHeadings) {
+          // Check if heading is visible and above the message form
+          const rect = heading.getBoundingClientRect();
+          const formRect = messageForm.getBoundingClientRect();
+          if (rect.bottom < formRect.top && rect.width > 0 && rect.height > 0) {
+            const text = heading.textContent?.trim();
+            if (text && text.length > 1 && text.length < 100) {
+              const lowerText = text.toLowerCase();
+              // Very lenient - just exclude obvious UI elements
+              if (
+                !lowerText.match(/^(linkedin|messaging|conversation|new message|search|filter)$/i) &&
+                !lowerText.startsWith("linkedin") &&
+                text.length > 1
+              ) {
+                name = text;
+                usedSelector = "viewport-search";
+                console.log("[Content] Found recipient name via viewport search:", name);
+                break;
               }
             }
           }
@@ -340,16 +343,13 @@ function extractRecipientInfo() {
       "p.msg-conversation-header__subtitle",
       "span.msg-conversation-header__subtitle",
     ];
-    
+
     // Broader selectors (only use if we have a container to scope to)
-    const broadBylineSelectors = [
-      'div[class*="byline"]',
-      'span[class*="byline"]',
-    ];
+    const broadBylineSelectors = ['div[class*="byline"]', 'span[class*="byline"]'];
 
     let byline = null;
     let usedBylineSelector = null;
-    
+
     // First, try specific selectors scoped to conversation container
     for (const selector of bylineSelectors) {
       try {
@@ -392,7 +392,7 @@ function extractRecipientInfo() {
         continue;
       }
     }
-    
+
     // If no byline found and we have a conversation container, try broader selectors within container
     if (!byline && conversationContainer) {
       for (const selector of broadBylineSelectors) {
