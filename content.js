@@ -999,16 +999,26 @@ async function categorizeInteraction(chatHistoryInfo, recipientInfo) {
       "Inbound meeting request",
     ];
 
-    const chatSummary = chatHistoryInfo?.summary || "No previous messages";
-    const isNewConversation = chatHistoryInfo?.isNewConversation !== false;
-    const keyTopics = chatHistoryInfo?.keyTopics || [];
+    const messages = chatHistoryInfo?.messages || [];
     const recipientByline = recipientInfo?.byline || "";
     const currentTime = new Date().toISOString();
 
+    // Format the full message history with names and timestamps
+    let messageHistoryText = "";
+    if (messages.length > 0) {
+      messageHistoryText = messages
+        .map((msg) => {
+          const sender = msg.sender === "user" ? "You" : recipientInfo?.name || "Recipient";
+          const timestamp = msg.timestamp ? ` [${msg.timestamp}]` : "";
+          return `${sender}${timestamp}: ${msg.text}`;
+        })
+        .join("\n\n");
+    } else {
+      messageHistoryText = "No previous messages (new conversation)";
+    }
+
     console.log("[Content] Categorizing with context:", {
-      chatSummary,
-      isNewConversation,
-      keyTopics,
+      messageCount: messages.length,
       recipientByline,
       categories,
       currentTime,
@@ -1033,9 +1043,7 @@ async function categorizeInteraction(chatHistoryInfo, recipientInfo) {
             role: "user",
             content: `Categorize this LinkedIn conversation:\n\nRecipient: ${
               recipientInfo?.name || "Unknown"
-            }\nRecipient Info: ${recipientByline}\n\nConversation Summary: ${chatSummary}\nIs New Conversation: ${isNewConversation}\nKey Topics: ${
-              keyTopics.join(", ") || "None"
-            }\n\nWhich category does this belong to?`,
+            }\nRecipient Info: ${recipientByline}\n\nMessage History:\n${messageHistoryText}\n\nWhich category does this belong to?`,
           },
         ],
         max_tokens: 50,
@@ -1154,32 +1162,29 @@ async function generateMessageDraft(context) {
       recipientInfo?.byline || "Not available"
     }`;
 
-    // Build chat context with actual message history - CRITICAL: Last message is most important
+    // Build chat context with full message history including names and timestamps
     let chatContext = "";
     if (chatHistoryInfo?.isNewConversation) {
       chatContext = "This is a new conversation with no previous messages.";
     } else {
       const messages = chatHistoryInfo?.messages || [];
-      const summary = chatHistoryInfo?.summary || "No summary available";
-      const keyTopics = chatHistoryInfo?.keyTopics || [];
 
-      // Format the conversation history with emphasis on the last message
+      // Format the full conversation history with names and timestamps
       if (messages.length > 0) {
-        // Get the last few messages (up to 10) for context, but always include the last one
-        const recentMessages = messages.slice(-10);
-        const messageHistoryText = recentMessages
+        const messageHistoryText = messages
           .map((msg, idx) => {
             const sender = msg.sender === "user" ? "You" : recipientInfo?.name || "Recipient";
-            const isLast = idx === recentMessages.length - 1;
+            const timestamp = msg.timestamp ? ` [${msg.timestamp}]` : "";
+            const isLast = idx === messages.length - 1;
             const marker = isLast ? " ⬅️ LAST MESSAGE (MOST IMPORTANT)" : "";
-            return `${sender}: ${msg.text}${marker}`;
+            return `${sender}${timestamp}: ${msg.text}${marker}`;
           })
           .join("\n\n");
 
-        chatContext = `=== CONVERSATION HISTORY (Last message is MOST IMPORTANT) ===\n\n${messageHistoryText}\n\n=== CONVERSATION SUMMARY ===\n${summary}\n\n=== KEY TOPICS ===\n${keyTopics.join(", ") || "None"}`;
+        chatContext = `=== FULL MESSAGE HISTORY (Last message is MOST IMPORTANT) ===\n\n${messageHistoryText}`;
       } else {
-        // Fallback if messages array is empty but we have summary
-        chatContext = `Previous conversation summary: ${summary}\nKey topics discussed: ${keyTopics.join(", ") || "None"}`;
+        // Fallback if messages array is empty
+        chatContext = "No previous messages available.";
       }
     }
 
@@ -1450,9 +1455,8 @@ async function storeMessageHistory(message, context) {
       context: {
         recipientInfo: context.recipientInfo || null,
         category: context.category || null,
-        chatHistorySummary: context.chatHistoryInfo?.summary || null,
+        messageHistory: context.chatHistoryInfo?.messages || [],
         isNewConversation: context.chatHistoryInfo?.isNewConversation || null,
-        keyTopics: context.chatHistoryInfo?.keyTopics || [],
         userPreferences: context.userPreferences || null,
         userName: context.userName || null,
         // Store a simplified version of research results (avoid storing large objects)

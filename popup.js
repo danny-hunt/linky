@@ -627,25 +627,23 @@ function createHistoryCard(entry) {
     contextDetails.appendChild(categoryDiv);
   }
   
-  if (context.chatHistorySummary) {
-    const summaryDiv = document.createElement('div');
-    summaryDiv.className = 'context-item';
-    summaryDiv.innerHTML = `<strong>Conversation Summary:</strong> ${context.chatHistorySummary}`;
-    contextDetails.appendChild(summaryDiv);
-  }
-  
-  if (context.isNewConversation !== null) {
+  if (context.messageHistory && Array.isArray(context.messageHistory) && context.messageHistory.length > 0) {
+    const historyDiv = document.createElement('div');
+    historyDiv.className = 'context-item';
+    const historyText = context.messageHistory
+      .map((msg) => {
+        const sender = msg.sender === 'user' ? 'You' : (context.recipientInfo?.name || 'Recipient');
+        const timestamp = msg.timestamp ? ` [${msg.timestamp}]` : '';
+        return `${sender}${timestamp}: ${msg.text}`;
+      })
+      .join('\n\n');
+    historyDiv.innerHTML = `<strong>Message History:</strong><pre style="white-space: pre-wrap; margin-top: 5px; font-size: 12px;">${historyText}</pre>`;
+    contextDetails.appendChild(historyDiv);
+  } else if (context.isNewConversation !== null && context.isNewConversation) {
     const newConvDiv = document.createElement('div');
     newConvDiv.className = 'context-item';
-    newConvDiv.innerHTML = `<strong>New Conversation:</strong> ${context.isNewConversation ? 'Yes' : 'No'}`;
+    newConvDiv.innerHTML = `<strong>Message History:</strong> New conversation (no previous messages)`;
     contextDetails.appendChild(newConvDiv);
-  }
-  
-  if (context.keyTopics && context.keyTopics.length > 0) {
-    const topicsDiv = document.createElement('div');
-    topicsDiv.className = 'context-item';
-    topicsDiv.innerHTML = `<strong>Key Topics:</strong> ${context.keyTopics.join(', ')}`;
-    contextDetails.appendChild(topicsDiv);
   }
   
   if (context.userPreferences) {
