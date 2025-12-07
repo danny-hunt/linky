@@ -1228,15 +1228,328 @@ if (document.readyState === "loading") {
   detectAndInsertChatMessages();
 }
 
+/**
+ * Checks if the current profile page belongs to the logged-in user
+ * This function's only job is to determine if a profile page is the user's own profile
+ * @returns {boolean} - True if this is the user's own profile page, false otherwise
+ */
+function isUserOwnProfile() {
+  try {
+    // LinkedIn profile URLs typically follow patterns like:
+    // - /in/username/ (for public profiles)
+    // - /feed/ (home feed, which indicates you're viewing your own content)
+    
+    const currentUrl = window.location.href;
+    const pathname = window.location.pathname;
+    
+    // Check if we're on a profile page (not messaging, feed, etc.)
+    const isProfilePage = pathname.match(/^\/in\/[^\/]+\/?$/) || pathname.match(/^\/in\/[^\/]+\/recent-activity\/?$/);
+    
+    if (!isProfilePage) {
+      return false;
+    }
+    
+    // Look for indicators that this is the user's own profile:
+    // 1. Check for "Edit profile" button or similar controls
+    const editProfileSelectors = [
+      'button[aria-label*="Edit profile"]',
+      'button[aria-label*="Edit public profile"]',
+      'a[aria-label*="Edit profile"]',
+      'a[aria-label*="Edit public profile"]',
+      'button[data-control-name="edit_topcard"]',
+      'a[data-control-name="edit_topcard"]',
+    ];
+    
+    for (const selector of editProfileSelectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        console.log("[Content] Found edit profile button, confirming own profile");
+        return true;
+      }
+    }
+    
+    // Also check for text content containing "Edit profile"
+    const allButtons = document.querySelectorAll('button, a');
+    for (const btn of allButtons) {
+      const text = btn.textContent?.toLowerCase() || '';
+      const ariaLabel = btn.getAttribute('aria-label')?.toLowerCase() || '';
+      if (text.includes('edit profile') || ariaLabel.includes('edit profile')) {
+        console.log("[Content] Found edit profile button via text search, confirming own profile");
+        return true;
+      }
+    }
+    
+    // 2. Check for "View profile as" or "See how others see your profile" - these only appear on own profile
+    const viewAsSelectors = [
+      'button[aria-label*="View profile as"]',
+      'button[aria-label*="See how others see"]',
+      'a[aria-label*="View profile as"]',
+      'a[aria-label*="See how others see"]',
+    ];
+    
+    for (const selector of viewAsSelectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        console.log("[Content] Found 'view as' option, confirming own profile");
+        return true;
+      }
+    }
+    
+    // Also check for text content
+    for (const btn of allButtons) {
+      const text = btn.textContent?.toLowerCase() || '';
+      const ariaLabel = btn.getAttribute('aria-label')?.toLowerCase() || '';
+      if (text.includes('view profile as') || text.includes('see how others see') ||
+          ariaLabel.includes('view profile as') || ariaLabel.includes('see how others see')) {
+        console.log("[Content] Found 'view as' option via text search, confirming own profile");
+        return true;
+      }
+    }
+    
+    // 3. Check for "Me" navigation item being active (if available)
+    const meNavItem = document.querySelector('nav a[href*="/in/"]');
+    if (meNavItem) {
+      const meNavText = meNavItem.textContent?.toLowerCase() || '';
+      const meNavAriaLabel = meNavItem.getAttribute('aria-label')?.toLowerCase() || '';
+      if (meNavText.includes('me') || meNavAriaLabel.includes('me') || meNavAriaLabel.includes('profile')) {
+        // Check if this nav item's href matches current profile URL
+        const navHref = meNavItem.getAttribute('href');
+        if (navHref && currentUrl.includes(navHref.split('?')[0])) {
+          console.log("[Content] Found active 'Me' nav item matching current profile");
+          return true;
+        }
+      }
+    }
+    
+    // 4. Check for profile header actions that only appear on own profile
+    // Look for "Add profile section" or similar
+    const profileActions = document.querySelectorAll('button, a');
+    for (const action of profileActions) {
+      const text = action.textContent?.toLowerCase() || '';
+      const ariaLabel = action.getAttribute('aria-label')?.toLowerCase() || '';
+      if (
+        text.includes('add profile section') ||
+        text.includes('add section') ||
+        ariaLabel.includes('add profile section') ||
+        ariaLabel.includes('add section')
+      ) {
+        console.log("[Content] Found 'add section' button, confirming own profile");
+        return true;
+      }
+    }
+    
+    // 5. Check URL pattern - if URL matches the pattern for "me" profile
+    // LinkedIn sometimes uses /in/me/ or similar patterns
+    if (pathname.includes('/me') || pathname.includes('/in/me')) {
+      console.log("[Content] URL pattern suggests own profile (/me)");
+      return true;
+    }
+    
+    // If none of the indicators are found, assume it's not the user's profile
+    // This is a conservative approach - we only scrape when we're confident
+    console.log("[Content] Could not confirm this is user's own profile");
+    return false;
+  } catch (error) {
+    console.error("[Content] Error checking if profile is user's own:", error);
+    return false; // Conservative: if we can't determine, assume it's not
+  }
+}
+
+/**
+ * Extracts user profile information from the current page using OpenAI LLM
+ * Only called when isUserOwnProfile() returns true
+ * @returns {Promise<Object|null>} - Extracted profile information or null on error
+ */
+async function extractUserProfileInfo() {
+  console.log("[Content] Extracting user profile information using OpenAI");
+  
+  try {
+    const openaiApiKey = await getOpenAIApiKey();
+    
+    if (!openaiApiKey) {
+      console.warn("[Content] No OpenAI API key available for profile extraction");
+      return null;
+    }
+    
+    // Get the main profile content area
+    // LinkedIn profile pages typically have a main content area with profile information
+    const profileSelectors = [
+      'main',
+      'div[class*="profile"]',
+      'section[class*="profile"]',
+      'div[data-testid="profile"]',
+      'div[class*="pv-profile"]',
+    ];
+    
+    let profileContainer = null;
+    for (const selector of profileSelectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        profileContainer = element;
+        break;
+      }
+    }
+    
+    // Fallback to body if no specific container found
+    if (!profileContainer) {
+      profileContainer = document.body;
+    }
+    
+    // Clone to avoid modifying the original
+    const clonedContainer = profileContainer.cloneNode(true);
+    
+    // Remove non-content elements
+    clonedContainer.querySelectorAll('script, style, noscript, nav, header, footer').forEach((el) => el.remove());
+    
+    // Get HTML content (limit size to keep API call reasonable)
+    const htmlContent = clonedContainer.innerHTML;
+    const maxLength = 20000; // Limit to ~20k chars for profile pages
+    const truncatedContent = htmlContent.length > maxLength ? htmlContent.substring(0, maxLength) + "..." : htmlContent;
+    
+    console.log("[Content] Sending profile page DOM to OpenAI for analysis");
+    
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `You are a LinkedIn profile information extractor. Extract key information from the provided HTML of a LinkedIn profile page. Return a JSON object with the following structure:
+{
+  "name": "Full name",
+  "headline": "Professional headline/title",
+  "location": "Location",
+  "currentCompany": "Current company name",
+  "currentPosition": "Current job title",
+  "about": "About section text",
+  "experience": [{"title": "Job title", "company": "Company name", "duration": "Time period"}],
+  "education": [{"school": "School name", "degree": "Degree", "field": "Field of study"}],
+  "skills": ["Skill 1", "Skill 2"],
+  "summary": "Brief professional summary"
+}
+Extract all available information. If a field is not available, use null. Only extract visible, meaningful content. Ignore UI elements, placeholders, and navigation.`,
+          },
+          {
+            role: "user",
+            content: `Extract profile information from this LinkedIn profile HTML:\n\n${truncatedContent}`,
+          },
+        ],
+        max_tokens: 2000,
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[Content] OpenAI API call failed for profile extraction:", response.status, errorText);
+      return null;
+    }
+    
+    const data = await response.json();
+    const extractedInfo = JSON.parse(data.choices?.[0]?.message?.content || "{}");
+    
+    // Add metadata
+    extractedInfo.extractedAt = new Date().toISOString();
+    extractedInfo.sourceUrl = window.location.href;
+    
+    console.log("[Content] Extracted user profile info:", extractedInfo);
+    return extractedInfo;
+  } catch (error) {
+    console.error("[Content] Error extracting user profile info:", error);
+    return null;
+  }
+}
+
+/**
+ * Stores user profile information in Chrome storage
+ * @param {Object} profileInfo - The extracted profile information
+ */
+async function storeUserProfileInfo(profileInfo) {
+  try {
+    console.log("[Content] Storing user profile information");
+    
+    if (!profileInfo) {
+      console.warn("[Content] No profile info to store");
+      return;
+    }
+    
+    // Store in Chrome sync storage so it's available across devices
+    await chrome.storage.sync.set({ 
+      userProfile: profileInfo,
+      userProfileLastUpdated: new Date().toISOString()
+    });
+    
+    console.log("[Content] User profile information stored successfully");
+  } catch (error) {
+    console.error("[Content] Error storing user profile info:", error);
+  }
+}
+
+/**
+ * Checks if we're on a profile page and if it's the user's own profile, then extracts and stores it
+ */
+async function checkAndStoreUserProfile() {
+  try {
+    // Check if we're on a profile page
+    const isProfilePage = window.location.pathname.match(/^\/in\/[^\/]+\/?/) || 
+                         window.location.pathname.match(/^\/in\/[^\/]+\/recent-activity\/?$/);
+    
+    if (!isProfilePage) {
+      return; // Not on a profile page
+    }
+    
+    // Wait a bit for the page to fully load
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Check if this is the user's own profile
+    const isOwnProfile = isUserOwnProfile();
+    
+    if (!isOwnProfile) {
+      console.log("[Content] Not user's own profile, skipping extraction");
+      return;
+    }
+    
+    console.log("[Content] Detected user's own profile page, extracting information");
+    
+    // Extract profile information
+    const profileInfo = await extractUserProfileInfo();
+    
+    if (profileInfo) {
+      // Store the profile information
+      await storeUserProfileInfo(profileInfo);
+      console.log("[Content] User profile information extracted and stored");
+    } else {
+      console.warn("[Content] Failed to extract profile information");
+    }
+  } catch (error) {
+    console.error("[Content] Error in checkAndStoreUserProfile:", error);
+  }
+}
+
 // Re-detect chat interfaces when navigating (LinkedIn is a SPA)
 let lastUrl = location.href;
 let chatCheckTimeout = null;
+let profileCheckTimeout = null;
 const domObserver = new MutationObserver(() => {
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
     // Reset processed inputs on navigation to allow re-detection
     // Note: WeakSet will automatically clear when elements are removed from DOM
+    
+    // Check for profile page when URL changes
+    if (profileCheckTimeout) {
+      clearTimeout(profileCheckTimeout);
+    }
+    profileCheckTimeout = setTimeout(() => {
+      checkAndStoreUserProfile();
+    }, 2000); // Wait 2 seconds for page to load
   }
 
   // Also check for new chat interfaces when DOM changes
@@ -1250,3 +1563,12 @@ const domObserver = new MutationObserver(() => {
   }, 1000);
 });
 domObserver.observe(document, { subtree: true, childList: true });
+
+// Check profile on initial page load
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => checkAndStoreUserProfile(), 2000);
+  });
+} else {
+  setTimeout(() => checkAndStoreUserProfile(), 2000);
+}
