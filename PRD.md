@@ -1,5 +1,7 @@
 # Product Requirements Document: Linky
 
+> **⚠️ FOR CODING AGENTS:** This document is the **single source of truth** for all design decisions and requirements. Always read this entire document before making any code changes. See also [AGENT_INSTRUCTIONS.md](./AGENT_INSTRUCTIONS.md) and [.cursorrules](./.cursorrules) for agent-specific guidance.
+
 ## Overview
 
 Linky is a Chrome extension that helps socially awkward LinkedIn users by automatically generating message drafts based on conversation context and user preferences. The extension reduces messaging friction by inserting ready-to-edit drafts into LinkedIn chat windows.

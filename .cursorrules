@@ -1,0 +1,37 @@
+# Cursor Agent Rules for Linky Extension
+
+## CRITICAL: Always Reference the PRD
+
+**Before making any code changes or architectural decisions, you MUST read and follow the Product Requirements Document (PRD.md).**
+
+The PRD.md file contains:
+- All design decisions and product requirements
+- Technical constraints and limitations
+- Core functionality specifications
+- User preference requirements
+- Implementation guidelines
+
+### Rules for Agents:
+
+1. **Always read PRD.md first** - Before implementing any feature, read the entire PRD to understand the requirements
+2. **Follow PRD specifications exactly** - The PRD defines what should be built, not the current codebase state
+3. **Respect technical constraints** - The PRD specifies important constraints (no LinkedIn API, DOM parsing only, etc.)
+4. **Use PRD as source of truth** - If code doesn't match PRD, update code to match PRD, not vice versa
+5. **Reference PRD in code comments** - When implementing features, add comments referencing relevant PRD sections
+
+### Current State:
+
+The codebase is currently in early development. The PRD describes the target state. When implementing features:
+- Follow the PRD specifications, not the current placeholder code
+- The PRD describes "Linky" - a LinkedIn message draft generation extension
+- Current code may be placeholder/example code that needs to be replaced
+
+### Key PRD Requirements to Remember:
+
+- No LinkedIn API calls - all data via DOM parsing
+- Desktop Chrome extension only (Manifest V3)
+- 1-on-1 chats only (not group chats)
+- Drafts are inserted but NOT auto-sent
+- Uses OpenAI API for message generation
+- User preferences stored in Chrome extension storage
+- Multiple interaction categories supported

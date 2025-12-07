@@ -1,4 +1,11 @@
-// Content script that runs on LinkedIn pages
+/**
+ * Content script that runs on LinkedIn pages
+ * 
+ * IMPORTANT: This file should implement functionality as specified in PRD.md
+ * See PRD.md for all design decisions, requirements, and technical constraints.
+ * 
+ * Current implementation is placeholder - refer to PRD.md for target functionality.
+ */
 let userName = '';
 let buttonElement = null;
 let popoverElement = null;

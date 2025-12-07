@@ -1,3 +1,12 @@
+/**
+ * Popup script for settings/preferences UI
+ * 
+ * IMPORTANT: This file should implement user preferences UI as specified in PRD.md
+ * See PRD.md for user preference requirements (tone, style, length, formality, etc.)
+ * 
+ * Current implementation is placeholder - refer to PRD.md for target functionality.
+ */
+
 // Load saved name when popup opens
 document.addEventListener('DOMContentLoaded', async () => {
   const userNameInput = document.getElementById('userName');
