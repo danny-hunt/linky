@@ -213,26 +213,83 @@ function extractRecipientInfo() {
   
   try {
     // LinkedIn chat header typically contains recipient info
-    // Common selectors for recipient name in chat interface
+    // Expanded selectors for recipient name in chat interface
     const nameSelectors = [
+      // Modern LinkedIn selectors
       'div.msg-s-message-list__name',
       'h2.msg-s-message-list__name',
       'span.msg-s-message-list__name',
       'div[data-testid="message-header-name"]',
       'h2.msg-conversation-listitem__participant-names',
-      // Fallback: look for name in conversation header
+      // Conversation header selectors
       'div.msg-conversation-header__title h2',
-      'div.msg-conversation-header__title span'
+      'div.msg-conversation-header__title span',
+      'div.msg-conversation-header__title',
+      // Alternative header selectors
+      'header.msg-conversation-header h2',
+      'header.msg-conversation-header span',
+      'div[class*="conversation-header"] h2',
+      'div[class*="conversation-header"] span',
+      // Profile name in message list area
+      'div[class*="message-list"] h2',
+      'div[class*="message-list"] h1',
+      // Generic fallbacks - look for any h2/h1 in the message area
+      'div.msg-s-message-list h2',
+      'div.msg-s-message-list h1',
+      // Look for aria-label with name
+      '[aria-label*="conversation"] h2',
+      '[aria-label*="conversation"] h1',
+      // Try finding by proximity to message form
+      'form.msg-form ~ * h2',
+      'form.msg-form ~ * h1'
     ];
     
     let name = null;
+    let usedSelector = null;
     for (const selector of nameSelectors) {
-      const element = document.querySelector(selector);
-      if (element) {
-        name = element.textContent?.trim();
-        if (name) {
-          console.log('[Content] Found recipient name using selector:', selector, '=', name);
-          break;
+      try {
+        const element = document.querySelector(selector);
+        if (element) {
+          const text = element.textContent?.trim();
+          // Filter out empty strings and common UI text
+          if (text && text.length > 0 && 
+              !text.toLowerCase().includes('linkedin') &&
+              !text.toLowerCase().includes('message') &&
+              !text.toLowerCase().includes('conversation') &&
+              text.length < 100) { // Reasonable name length
+            name = text;
+            usedSelector = selector;
+            console.log('[Content] Found recipient name using selector:', selector, '=', name);
+            break;
+          }
+        }
+      } catch (selectorError) {
+        // Continue to next selector if this one fails
+        continue;
+      }
+    }
+    
+    // If still no name, try a more aggressive search
+    if (!name) {
+      console.log('[Content] Standard selectors failed, trying broader search');
+      // Look for any visible h2/h1 near the message form
+      const messageForm = document.querySelector('form.msg-form, div.msg-form__contenteditable');
+      if (messageForm) {
+        const header = messageForm.closest('div[class*="conversation"], div[class*="message"]');
+        if (header) {
+          const headings = header.querySelectorAll('h1, h2, h3, [class*="name"], [class*="title"]');
+          for (const heading of headings) {
+            const text = heading.textContent?.trim();
+            if (text && text.length > 0 && text.length < 100 &&
+                !text.toLowerCase().includes('linkedin') &&
+                !text.toLowerCase().includes('message') &&
+                !text.toLowerCase().includes('conversation')) {
+              name = text;
+              usedSelector = 'broad-search';
+              console.log('[Content] Found recipient name via broad search:', name);
+              break;
+            }
+          }
         }
       }
     }
@@ -244,18 +301,27 @@ function extractRecipientInfo() {
       'div[data-testid="message-header-byline"]',
       'div.msg-conversation-header__subtitle',
       'p.msg-conversation-header__subtitle',
-      'span.msg-conversation-header__subtitle'
+      'span.msg-conversation-header__subtitle',
+      'div[class*="byline"]',
+      'div[class*="subtitle"]',
+      'span[class*="byline"]',
+      'span[class*="subtitle"]'
     ];
     
     let byline = null;
     for (const selector of bylineSelectors) {
-      const element = document.querySelector(selector);
-      if (element) {
-        byline = element.textContent?.trim();
-        if (byline) {
-          console.log('[Content] Found recipient byline using selector:', selector, '=', byline);
-          break;
+      try {
+        const element = document.querySelector(selector);
+        if (element) {
+          const text = element.textContent?.trim();
+          if (text && text.length > 0) {
+            byline = text;
+            console.log('[Content] Found recipient byline using selector:', selector, '=', byline);
+            break;
+          }
         }
+      } catch (selectorError) {
+        continue;
       }
     }
     
@@ -265,10 +331,17 @@ function extractRecipientInfo() {
         name,
         byline: byline || null
       };
-      console.log('[Content] Extracted recipient info:', recipientInfo);
+      console.log('[Content] Extracted recipient info:', recipientInfo, '(used selector:', usedSelector, ')');
       return recipientInfo;
     } else {
-      console.log('[Content] Could not extract recipient information - no name found');
+      // Enhanced debugging: log what we found
+      console.warn('[Content] Could not extract recipient information - no name found');
+      console.log('[Content] Debug info:');
+      console.log('  - Message form found:', !!document.querySelector('form.msg-form, div.msg-form__contenteditable'));
+      console.log('  - Conversation header found:', !!document.querySelector('div[class*="conversation-header"]'));
+      console.log('  - Message list found:', !!document.querySelector('div[class*="message-list"]'));
+      console.log('  - All h2 elements:', Array.from(document.querySelectorAll('h2')).map(h => h.textContent?.trim()).filter(Boolean));
+      console.log('  - All h1 elements:', Array.from(document.querySelectorAll('h1')).map(h => h.textContent?.trim()).filter(Boolean));
       return null;
     }
   } catch (error) {
@@ -796,10 +869,29 @@ async function generateAndInsertMessage(inputElement) {
   try {
     console.log('[Content] Starting message generation flow');
     
-    // Step 1: Extract recipient information
-    const recipientInfo = extractRecipientInfo();
+    // Step 1: Extract recipient information (with retry)
+    let recipientInfo = extractRecipientInfo();
+    
+    // If extraction failed, wait a bit and retry (page might still be loading)
     if (!recipientInfo) {
-      throw new Error('Could not extract recipient information');
+      console.log('[Content] Initial extraction failed, waiting 1s and retrying...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      recipientInfo = extractRecipientInfo();
+    }
+    
+    // Final retry after another delay
+    if (!recipientInfo) {
+      console.log('[Content] Second extraction attempt failed, waiting 2s and retrying one more time...');
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      recipientInfo = extractRecipientInfo();
+    }
+    
+    if (!recipientInfo) {
+      const errorMsg = 'Could not extract recipient information. Please ensure you are on a LinkedIn chat page and the page has fully loaded.';
+      console.error('[Content]', errorMsg);
+      console.error('[Content] Current URL:', window.location.href);
+      console.error('[Content] Page title:', document.title);
+      throw new Error(errorMsg);
     }
     
     // Step 2: Extract chat history DOM
