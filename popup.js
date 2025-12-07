@@ -654,10 +654,42 @@ function createHistoryCard(entry) {
     contextDetails.appendChild(prefsDiv);
   }
   
-  if (context.hasResearchResults) {
+  if (context.hasResearchResults && context.researchResults) {
     const researchDiv = document.createElement('div');
     researchDiv.className = 'context-item';
-    researchDiv.innerHTML = `<strong>Research:</strong> Additional research was performed`;
+    
+    const research = context.researchResults;
+    let researchHtml = `<strong>Research:</strong>`;
+    
+    if (research.searchTerm) {
+      researchHtml += `<br><em>Search term:</em> ${research.searchTerm}`;
+    }
+    
+    if (research.totalResults > 0) {
+      researchHtml += `<br><em>Found ${research.totalResults} result${research.totalResults !== 1 ? 's' : ''}</em>`;
+    }
+    
+    if (research.results && research.results.length > 0) {
+      researchHtml += '<div style="margin-top: 8px;">';
+      research.results.forEach((item, index) => {
+        researchHtml += `
+          <div style="margin-bottom: 8px; padding: 6px; background: #f5f5f5; border-radius: 4px;">
+            <strong>${index + 1}. ${item.title || 'Untitled'}</strong><br>
+            ${item.snippet ? `<span style="font-size: 12px; color: #666;">${item.snippet}</span><br>` : ''}
+            ${item.link ? `<a href="${item.link}" target="_blank" style="font-size: 11px; color: #0066cc;">${item.link}</a>` : ''}
+          </div>
+        `;
+      });
+      researchHtml += '</div>';
+    }
+    
+    researchDiv.innerHTML = researchHtml;
+    contextDetails.appendChild(researchDiv);
+  } else if (context.hasResearchResults) {
+    // Fallback if hasResearchResults is true but researchResults is missing
+    const researchDiv = document.createElement('div');
+    researchDiv.className = 'context-item';
+    researchDiv.innerHTML = `<strong>Research:</strong> Research was performed, but details are not available`;
     contextDetails.appendChild(researchDiv);
   }
   

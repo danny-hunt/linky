@@ -767,10 +767,21 @@ async function generateMessageDraft(context) {
       }
     }
 
-    const researchContext =
-      researchResults?.searchResults?.results?.length > 0
-        ? `Research findings: Found ${researchResults.searchResults.results.length} relevant results about the recipient.`
-        : "No additional research findings available.";
+    // Build research context with actual research content
+    let researchContext = "No additional research findings available.";
+    if (researchResults?.searchResults?.results?.length > 0) {
+      const results = researchResults.searchResults.results;
+      const researchItems = results
+        .slice(0, 5) // Limit to top 5 results to avoid token limits
+        .map((item, index) => {
+          return `${index + 1}. ${item.title || 'Untitled'}\n   ${item.snippet || item.link || 'No description'}\n   ${item.link || ''}`;
+        })
+        .join('\n\n');
+      
+      researchContext = `Research findings about the recipient (${results.length} total results found):\n\n${researchItems}`;
+    } else if (researchResults?.searchResults?.error) {
+      researchContext = `Research attempted but encountered an error: ${researchResults.searchResults.error}`;
+    }
 
     const preferencesContext = userPreferences
       ? `Message style preferences:\n- Tone: ${userPreferences.tone || "professional"}\n- Length: ${
@@ -1038,8 +1049,21 @@ async function storeMessageHistory(message, context) {
         isNewConversation: context.chatHistoryInfo?.isNewConversation || null,
         userPreferences: context.userPreferences || null,
         userName: context.userName || null,
-        // Store a simplified version of research results (avoid storing large objects)
+        // Store research results summary (limit to avoid storage issues)
         hasResearchResults: !!(context.researchResults && context.researchResults.searchResults),
+        researchResults: context.researchResults?.searchResults?.results 
+          ? {
+              searchTerm: context.researchResults.searchTerm,
+              totalResults: context.researchResults.searchResults.totalResults || 0,
+              results: context.researchResults.searchResults.results
+                .slice(0, 5) // Store only top 5 results
+                .map(item => ({
+                  title: item.title || 'Untitled',
+                  snippet: item.snippet || '',
+                  link: item.link || ''
+                }))
+            }
+          : null,
       },
     };
 
