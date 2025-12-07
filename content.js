@@ -795,6 +795,16 @@ async function generateMessageDraft(context) {
     const customInstructionsContext = userPreferences?.customInstructions?.trim()
       ? `\n\nCustom Instructions for this category:\n${userPreferences.customInstructions.trim()}`
       : "";
+    
+    // Debug: Log if custom instructions are being included
+    if (customInstructionsContext) {
+      console.log("[Content] Including custom instructions in prompt:", userPreferences.customInstructions);
+    } else {
+      console.log("[Content] No custom instructions found for this category");
+      if (userPreferences) {
+        console.log("[Content] Available userPreferences keys:", Object.keys(userPreferences));
+      }
+    }
 
     const systemPrompt = `You are a LinkedIn message draft generator. Generate a personalized, contextually appropriate LinkedIn message draft based on the provided information. 
 
@@ -816,7 +826,15 @@ ${preferencesContext}${customInstructionsContext}
 
 ${userName ? `Your name: ${userName}` : ""}
 
-Current time: ${new Date().toLocaleString()}
+Current time: ${new Date().toLocaleString()}`;
+    
+    // Debug: Log the full prompt section to verify custom instructions are included
+    const promptSection = `${preferencesContext}${customInstructionsContext}`;
+    console.log("[Content] Full preferences section being sent to OpenAI:", promptSection);`;
+    
+    // Debug: Log the full prompt section to verify custom instructions are included
+    const promptSection = `${preferencesContext}${customInstructionsContext}`;
+    console.log("[Content] Full preferences section being sent to OpenAI:", promptSection);
 
 Generate a personalized message draft that:
 - **CRITICALLY IMPORTANT: Responds directly to the LAST MESSAGE in the conversation history** - This is the most important requirement. Read the last message carefully and address its specific content, questions, or requests. Do NOT generate a generic message that could apply to any conversation.
@@ -1182,6 +1200,14 @@ async function generateAndInsertMessage(inputElement) {
       formalityLevel: "moderate",
     };
     const userName = result.userName || "";
+    
+    // Debug: Log preferences to verify customInstructions are included
+    console.log("[Content] Category:", category, "Category Key:", categoryKey);
+    console.log("[Content] User preferences for category:", userPreferences);
+    console.log("[Content] Custom instructions present:", !!userPreferences.customInstructions);
+    if (userPreferences.customInstructions) {
+      console.log("[Content] Custom instructions content:", userPreferences.customInstructions);
+    }
 
     // Step 7: Generate message draft
     const context = {
