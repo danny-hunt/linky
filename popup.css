@@ -5,9 +5,11 @@
 }
 
 body {
-  width: 300px;
+  width: 500px;
+  max-height: 700px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   background: #f3f2ef;
+  overflow-y: auto;
 }
 
 .container {
@@ -15,30 +17,53 @@ body {
 }
 
 h1 {
-  font-size: 18px;
+  font-size: 20px;
   color: #0a66c2;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   font-weight: 600;
 }
 
+h2 {
+  font-size: 16px;
+  color: #333;
+  margin-bottom: 16px;
+  font-weight: 600;
+  border-bottom: 2px solid #0a66c2;
+  padding-bottom: 8px;
+}
+
 .settings-section {
+  margin-bottom: 24px;
+}
+
+.section-description {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 16px;
+  font-style: italic;
+}
+
+.form-group {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 label {
   font-size: 14px;
-  color: #666;
+  color: #333;
   font-weight: 500;
 }
 
+input[type="text"],
 input[type="text"] {
   padding: 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
   transition: border-color 0.2s;
+  width: 100%;
 }
 
 input[type="text"]:focus {
@@ -46,8 +71,33 @@ input[type="text"]:focus {
   border-color: #0a66c2;
 }
 
-button {
-  padding: 10px 16px;
+select {
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background-color: white;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  width: 100%;
+}
+
+select:focus {
+  outline: none;
+  border-color: #0a66c2;
+}
+
+.input-group {
+  display: flex;
+  gap: 8px;
+}
+
+.input-group input {
+  flex: 1;
+}
+
+.btn-primary {
+  padding: 12px 24px;
   background-color: #0a66c2;
   color: white;
   border: none;
@@ -56,14 +106,119 @@ button {
   font-weight: 500;
   cursor: pointer;
   transition: background-color 0.2s;
+  width: 100%;
 }
 
-button:hover {
+.btn-primary:hover {
   background-color: #004182;
 }
 
-button:active {
+.btn-primary:active {
   transform: scale(0.98);
+}
+
+.btn-secondary {
+  padding: 10px 16px;
+  background-color: #666;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+}
+
+.btn-secondary:hover {
+  background-color: #555;
+}
+
+.btn-danger {
+  padding: 6px 12px;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.btn-danger:hover {
+  background-color: #c82333;
+}
+
+.category-card {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.category-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.category-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.category-preferences {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.preference-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.preference-item.full-width {
+  grid-column: 1 / -1;
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: auto;
+  cursor: pointer;
+}
+
+.checkbox-group label {
+  font-weight: normal;
+  cursor: pointer;
+}
+
+.add-category-section {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #ddd;
+}
+
+.actions {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 2px solid #0a66c2;
 }
 
 .status {

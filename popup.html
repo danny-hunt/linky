@@ -3,17 +3,46 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LinkedIn Extension Settings</title>
+  <title>Linky - User Preferences</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <div class="container">
-    <h1>LinkedIn Extension</h1>
+    <h1>Linky Preferences</h1>
+    
+    <!-- General Settings -->
     <div class="settings-section">
-      <label for="userName">Your Name:</label>
-      <input type="text" id="userName" placeholder="Enter your name">
-      <button id="saveBtn">Save</button>
+      <h2>General Settings</h2>
+      <div class="form-group">
+        <label for="userName">Your Name:</label>
+        <input type="text" id="userName" placeholder="Enter your name">
+      </div>
     </div>
+
+    <!-- Interaction Category Preferences -->
+    <div class="settings-section">
+      <h2>Interaction Category Preferences</h2>
+      <p class="section-description">Configure message preferences for each interaction type</p>
+      
+      <div id="categoryPreferences"></div>
+      
+      <!-- Add Custom Category -->
+      <div class="add-category-section">
+        <div class="form-group">
+          <label for="newCategoryName">Add Custom Category:</label>
+          <div class="input-group">
+            <input type="text" id="newCategoryName" placeholder="Category name">
+            <button id="addCategoryBtn" class="btn-secondary">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save Button -->
+    <div class="actions">
+      <button id="saveBtn" class="btn-primary">Save All Preferences</button>
+    </div>
+    
     <div id="status" class="status"></div>
   </div>
   <script src="popup.js"></script>
