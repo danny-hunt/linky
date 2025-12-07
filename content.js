@@ -32,18 +32,32 @@ const processedInputs = new WeakSet(); // Track processed inputs to avoid duplic
 const messageGenerationInProgress = new WeakSet(); // Track inputs that are currently generating messages
 
 // Load saved name from storage
-chrome.storage.sync.get(["userName"], (result) => {
-  if (result.userName) {
-    userName = result.userName;
+if (isExtensionContextValid()) {
+  try {
+    chrome.storage.sync.get(["userName"], (result) => {
+      if (chrome.runtime.lastError) {
+        console.warn("[Content] Error loading userName:", chrome.runtime.lastError.message);
+        return;
+      }
+      if (result.userName) {
+        userName = result.userName;
+      }
+    });
+  } catch (error) {
+    console.warn("[Content] Exception loading userName:", error);
   }
-});
+}
 
 // Listen for messages from popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "updateName" || request.action === "preferencesUpdated") {
-    userName = request.userName || userName;
-  }
-});
+try {
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === "updateName" || request.action === "preferencesUpdated") {
+      userName = request.userName || userName;
+    }
+  });
+} catch (error) {
+  console.warn("[Content] Error setting up message listener:", error);
+}
 
 /**
  * Normalizes a name for comparison (lowercase, trim, remove extra spaces)
@@ -957,6 +971,19 @@ async function extractChatHistoryInfo(chatContainer) {
 }
 
 /**
+ * Checks if the extension context is still valid
+ * @returns {boolean} - True if context is valid, false otherwise
+ */
+function isExtensionContextValid() {
+  try {
+    // Try to access chrome.runtime.id - if it throws, context is invalidated
+    return !!chrome.runtime?.id;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
  * Retrieves OpenAI API key (helper function)
  * @returns {Promise<string|null>} - API key or null if not found
  */
@@ -972,11 +999,27 @@ async function getOpenAIApiKey() {
     return window.OPENAI_API_KEY;
   }
 
+  // Check if extension context is valid before accessing chrome.storage
+  if (!isExtensionContextValid()) {
+    console.warn("[Content] Extension context invalidated, cannot access storage");
+    return null;
+  }
+
   // Fallback to Chrome storage
   return new Promise((resolve) => {
-    chrome.storage.sync.get(["openaiApiKey"], (result) => {
-      resolve(result.openaiApiKey || null);
-    });
+    try {
+      chrome.storage.sync.get(["openaiApiKey"], (result) => {
+        if (chrome.runtime.lastError) {
+          console.warn("[Content] Error accessing storage:", chrome.runtime.lastError.message);
+          resolve(null);
+          return;
+        }
+        resolve(result.openaiApiKey || null);
+      });
+    } catch (error) {
+      console.warn("[Content] Exception accessing storage:", error);
+      resolve(null);
+    }
   });
 }
 
@@ -1023,6 +1066,12 @@ async function categorizeInteraction(chatHistoryInfo, recipientInfo) {
   console.log("[Content] Categorizing interaction");
 
   try {
+    // Check if extension context is valid
+    if (!isExtensionContextValid()) {
+      console.warn("[Content] Extension context invalidated, using default category");
+      return "Recruiter inbound";
+    }
+
     const openaiApiKey = await getOpenAIApiKey();
 
     if (!openaiApiKey) {
@@ -1031,7 +1080,22 @@ async function categorizeInteraction(chatHistoryInfo, recipientInfo) {
     }
 
     // Get available categories from storage
-    const result = await chrome.storage.sync.get(["categories"]);
+    let result;
+    try {
+      result = await new Promise((resolve, reject) => {
+        chrome.storage.sync.get(["categories"], (res) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(res);
+        });
+      });
+    } catch (error) {
+      console.warn("[Content] Error accessing storage for categories:", error);
+      result = {};
+    }
+
     const categories = result.categories || [
       "Recruiter inbound",
       "Colleague/friend",
@@ -1151,52 +1215,62 @@ async function callLangCache(
     langCacheId,
   });
 
+  // Check if extension context is valid before sending message
+  if (!isExtensionContextValid()) {
+    throw new Error("Extension context invalidated");
+  }
+
   // Proxy the request through the background script to avoid CORS issues
   // Content scripts run in the page context and are subject to CORS restrictions,
   // but background scripts can make cross-origin requests to domains in host_permissions
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(
-      {
-        action: "callLangCache",
-        langCacheUrl: langCacheUrl,
-        langCacheApiKey: langCacheApiKey,
-        langCacheId: langCacheId,
-        openaiApiKey: openaiApiKey,
-        messages: messages,
-        model: model,
-        maxTokens: maxTokens,
-        temperature: temperature,
-      },
-      (response) => {
-        // Check for Chrome runtime errors
-        if (chrome.runtime.lastError) {
-          console.error("[Content] LangCache message error:", chrome.runtime.lastError.message);
-          reject(new Error(`LangCache message error: ${chrome.runtime.lastError.message}`));
-          return;
-        }
+    try {
+      chrome.runtime.sendMessage(
+        {
+          action: "callLangCache",
+          langCacheUrl: langCacheUrl,
+          langCacheApiKey: langCacheApiKey,
+          langCacheId: langCacheId,
+          openaiApiKey: openaiApiKey,
+          messages: messages,
+          model: model,
+          maxTokens: maxTokens,
+          temperature: temperature,
+        },
+        (response) => {
+          // Check for Chrome runtime errors
+          if (chrome.runtime.lastError) {
+            console.error("[Content] LangCache message error:", chrome.runtime.lastError.message);
+            reject(new Error(`LangCache message error: ${chrome.runtime.lastError.message}`));
+            return;
+          }
 
-        // Check for API errors in response
-        if (response.error) {
-          console.error("[Content] LangCache API error:", response.error);
-          reject(new Error(response.error));
-          return;
-        }
+          // Check for API errors in response
+          if (response.error) {
+            console.error("[Content] LangCache API error:", response.error);
+            reject(new Error(response.error));
+            return;
+          }
 
-        // Verify the response structure
-        if (
-          !response.data ||
-          !response.data.choices ||
-          !Array.isArray(response.data.choices) ||
-          response.data.choices.length === 0
-        ) {
-          reject(new Error("Invalid LangCache response format: missing choices"));
-          return;
-        }
+          // Verify the response structure
+          if (
+            !response.data ||
+            !response.data.choices ||
+            !Array.isArray(response.data.choices) ||
+            response.data.choices.length === 0
+          ) {
+            reject(new Error("Invalid LangCache response format: missing choices"));
+            return;
+          }
 
-        console.log("[Content] LangCache response received (cache hit or miss)");
-        resolve(response.data);
-      }
-    );
+          console.log("[Content] LangCache response received (cache hit or miss)");
+          resolve(response.data);
+        }
+      );
+    } catch (error) {
+      console.error("[Content] Exception sending message to background:", error);
+      reject(error);
+    }
   });
 }
 
@@ -1534,10 +1608,31 @@ async function storeConversationCategory(recipientInfo, category) {
       return;
     }
 
+    // Check if extension context is valid
+    if (!isExtensionContextValid()) {
+      console.warn("[Content] Extension context invalidated, cannot store category");
+      return;
+    }
+
     console.log("[Content] Storing conversation category:", recipientInfo.name, "->", category);
 
     // Get existing conversation categories
-    const result = await chrome.storage.local.get(["conversationCategories"]);
+    let result;
+    try {
+      result = await new Promise((resolve, reject) => {
+        chrome.storage.local.get(["conversationCategories"], (res) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(res);
+        });
+      });
+    } catch (error) {
+      console.warn("[Content] Error accessing storage:", error);
+      return;
+    }
+
     const categories = result.conversationCategories || {};
 
     // Store category keyed by recipient name
@@ -1547,9 +1642,20 @@ async function storeConversationCategory(recipientInfo, category) {
     };
 
     // Save to storage
-    await chrome.storage.local.set({ conversationCategories: categories });
-
-    console.log("[Content] Conversation category stored successfully");
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.storage.local.set({ conversationCategories: categories }, () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve();
+        });
+      });
+      console.log("[Content] Conversation category stored successfully");
+    } catch (error) {
+      console.warn("[Content] Error saving to storage:", error);
+    }
   } catch (error) {
     console.error("[Content] Error storing conversation category:", error);
   }
@@ -1707,6 +1813,12 @@ async function addCategoryTagToConversation(recipientInfo, category, retryCount 
  */
 async function loadConversationCategoryTag() {
   try {
+    // Check if extension context is valid
+    if (!isExtensionContextValid()) {
+      console.warn("[Content] Extension context invalidated, cannot load category tags");
+      return;
+    }
+
     // Wait a bit for the page to be ready
     await new Promise((resolve) => setTimeout(resolve, 500));
     
@@ -1715,13 +1827,28 @@ async function loadConversationCategoryTag() {
     if (!recipientInfo?.name) {
       // Retry once if recipient info not found (with longer delay)
       setTimeout(async () => {
+        if (!isExtensionContextValid()) {
+          return;
+        }
         const retryRecipientInfo = await extractRecipientInfo();
         if (retryRecipientInfo?.name) {
-          const result = await chrome.storage.local.get(["conversationCategories"]);
-          const categories = result.conversationCategories || {};
-          const conversationData = categories[retryRecipientInfo.name];
-          if (conversationData?.category) {
-            await addCategoryTagToConversation(retryRecipientInfo, conversationData.category);
+          try {
+            const result = await new Promise((resolve, reject) => {
+              chrome.storage.local.get(["conversationCategories"], (res) => {
+                if (chrome.runtime.lastError) {
+                  reject(new Error(chrome.runtime.lastError.message));
+                  return;
+                }
+                resolve(res);
+              });
+            });
+            const categories = result.conversationCategories || {};
+            const conversationData = categories[retryRecipientInfo.name];
+            if (conversationData?.category) {
+              await addCategoryTagToConversation(retryRecipientInfo, conversationData.category);
+            }
+          } catch (error) {
+            console.warn("[Content] Error loading category on retry:", error);
           }
         }
       }, 3000); // Increased from 1000ms to 3000ms
@@ -1729,7 +1856,22 @@ async function loadConversationCategoryTag() {
     }
 
     // Get stored categories
-    const result = await chrome.storage.local.get(["conversationCategories"]);
+    let result;
+    try {
+      result = await new Promise((resolve, reject) => {
+        chrome.storage.local.get(["conversationCategories"], (res) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(res);
+        });
+      });
+    } catch (error) {
+      console.warn("[Content] Error accessing storage:", error);
+      return;
+    }
+
     const categories = result.conversationCategories || {};
 
     // Check if we have a category for this recipient
@@ -1750,10 +1892,31 @@ async function loadConversationCategoryTag() {
  */
 async function storeMessageHistory(message, context) {
   try {
+    // Check if extension context is valid
+    if (!isExtensionContextValid()) {
+      console.warn("[Content] Extension context invalidated, cannot store message history");
+      return;
+    }
+
     console.log("[Content] Storing message history");
 
     // Get existing message history
-    const result = await chrome.storage.local.get(["messageHistory"]);
+    let result;
+    try {
+      result = await new Promise((resolve, reject) => {
+        chrome.storage.local.get(["messageHistory"], (res) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(res);
+        });
+      });
+    } catch (error) {
+      console.warn("[Content] Error accessing storage:", error);
+      return;
+    }
+
     const history = result.messageHistory || [];
 
     // Create history entry
@@ -1796,9 +1959,20 @@ async function storeMessageHistory(message, context) {
     }
 
     // Save to storage
-    await chrome.storage.local.set({ messageHistory: history });
-
-    console.log("[Content] Message history stored successfully");
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.storage.local.set({ messageHistory: history }, () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve();
+        });
+      });
+      console.log("[Content] Message history stored successfully");
+    } catch (error) {
+      console.warn("[Content] Error saving message history:", error);
+    }
   } catch (error) {
     console.error("[Content] Error storing message history:", error);
     // Don't throw - history storage failure shouldn't break message generation
@@ -1822,6 +1996,12 @@ function insertErrorMessage(inputElement, errorMessage) {
  */
 async function generateAndInsertMessage(inputElement) {
   if (!inputElement || processedInputs.has(inputElement) || messageGenerationInProgress.has(inputElement)) {
+    return;
+  }
+
+  // Check if extension context is valid before starting
+  if (!isExtensionContextValid()) {
+    console.warn("[Content] Extension context invalidated, skipping message generation");
     return;
   }
 
@@ -1889,7 +2069,29 @@ async function generateAndInsertMessage(inputElement) {
 
     // Step 6: Get user preferences for this category
     const categoryKey = category.toLowerCase().replace(/\s+/g, "_");
-    const result = await chrome.storage.sync.get(["categoryPreferences", "userName"]);
+    
+    // Check extension context before accessing storage
+    let result;
+    if (!isExtensionContextValid()) {
+      console.warn("[Content] Extension context invalidated, using default preferences");
+      result = {};
+    } else {
+      try {
+        result = await new Promise((resolve, reject) => {
+          chrome.storage.sync.get(["categoryPreferences", "userName"], (res) => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            resolve(res);
+          });
+        });
+      } catch (error) {
+        console.warn("[Content] Error accessing storage for preferences:", error);
+        result = {};
+      }
+    }
+    
     const allPreferences = result.categoryPreferences || {};
     const userPreferences = allPreferences[categoryKey] || {
       tone: "professional",
@@ -2237,13 +2439,33 @@ async function storeUserProfileInfo(profileInfo) {
       return;
     }
 
-    // Store in Chrome sync storage so it's available across devices
-    await chrome.storage.sync.set({
-      userProfile: profileInfo,
-      userProfileLastUpdated: new Date().toISOString(),
-    });
+    // Check if extension context is valid
+    if (!isExtensionContextValid()) {
+      console.warn("[Content] Extension context invalidated, cannot store profile");
+      return;
+    }
 
-    console.log("[Content] User profile information stored successfully");
+    // Store in Chrome sync storage so it's available across devices
+    try {
+      await new Promise((resolve, reject) => {
+        chrome.storage.sync.set(
+          {
+            userProfile: profileInfo,
+            userProfileLastUpdated: new Date().toISOString(),
+          },
+          () => {
+            if (chrome.runtime.lastError) {
+              reject(new Error(chrome.runtime.lastError.message));
+              return;
+            }
+            resolve();
+          }
+        );
+      });
+      console.log("[Content] User profile information stored successfully");
+    } catch (error) {
+      console.warn("[Content] Error saving profile to storage:", error);
+    }
   } catch (error) {
     console.error("[Content] Error storing user profile info:", error);
   }
