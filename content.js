@@ -10,6 +10,25 @@ let userName = "";
 let buttonElement = null;
 let popoverElement = null;
 
+// Default interaction categories as per PRD.md
+const DEFAULT_CATEGORIES = [
+  "Recruiter inbound",
+  "Colleague/friend",
+  "Inbound advice request",
+  "Inbound meeting request",
+];
+
+// Default preferences for each category
+const DEFAULT_PREFERENCES = {
+  tone: "professional",
+  length: "medium",
+  greetingStyle: "standard",
+  closingStyle: "standard",
+  formalityLevel: "moderate",
+  autoInsert: true,
+  previewBeforeInsert: false,
+};
+
 // Chat detection and auto-insert
 const processedInputs = new WeakSet(); // Track processed inputs to avoid duplicates
 const messageGenerationInProgress = new WeakSet(); // Track inputs that are currently generating messages
@@ -72,7 +91,7 @@ function togglePopover() {
   }
 }
 
-function openPopover() {
+async function openPopover() {
   // Remove existing popover if it exists
   const existingPopover = document.getElementById("linkedin-extension-popover");
   if (existingPopover) {
@@ -84,17 +103,35 @@ function openPopover() {
   popoverElement.id = "linkedin-extension-popover";
   popoverElement.className = "linkedin-extension-popover";
 
+  // Load saved preferences
+  const result = await chrome.storage.sync.get(["userName", "categories", "categoryPreferences"]);
+
+  const categories = result.categories || [...DEFAULT_CATEGORIES];
+  const categoryPreferences = result.categoryPreferences || {};
+
   // Create popover content (preferences menu)
   popoverElement.innerHTML = `
     <div class="popover-header">
-      <h2>LinkedIn Extension</h2>
+      <h2>Linky Settings</h2>
       <button class="popover-close" aria-label="Close">×</button>
     </div>
     <div class="popover-content">
       <div class="settings-section">
-        <label for="popover-userName">Your Name:</label>
-        <input type="text" id="popover-userName" placeholder="Enter your name" value="${userName || ""}">
-        <button id="popover-saveBtn">Save</button>
+        <h3>General Settings</h3>
+        <div class="form-group">
+          <label for="popover-userName">Your Name:</label>
+          <input type="text" id="popover-userName" placeholder="Enter your name" value="${userName || ""}">
+        </div>
+      </div>
+      
+      <div class="settings-section">
+        <h3>Interaction Category Preferences</h3>
+        <p class="section-description">Configure message preferences for each interaction type</p>
+        <div id="popover-categoryPreferences"></div>
+      </div>
+
+      <div class="actions">
+        <button id="popover-saveBtn" class="btn-primary">Save All Preferences</button>
       </div>
       <div id="popover-status" class="status"></div>
     </div>
@@ -106,43 +143,283 @@ function openPopover() {
     body.appendChild(popoverElement);
   }
 
+  // Render category preferences
+  renderPopoverCategoryPreferences(categories, categoryPreferences);
+
   // Position popover near the button
   positionPopover();
 
   // Add event listeners
   const closeBtn = popoverElement.querySelector(".popover-close");
   const saveBtn = popoverElement.querySelector("#popover-saveBtn");
-  const userNameInput = popoverElement.querySelector("#popover-userName");
 
   closeBtn.addEventListener("click", closePopover);
+  saveBtn.addEventListener("click", saveAllPopoverPreferences);
 
-  saveBtn.addEventListener("click", async () => {
+  // Focus the name input
+  const userNameInput = popoverElement.querySelector("#popover-userName");
+  setTimeout(() => userNameInput.focus(), 100);
+}
+
+/**
+ * Render category preferences in the popover
+ */
+function renderPopoverCategoryPreferences(categories, savedPreferences) {
+  const container = popoverElement.querySelector("#popover-categoryPreferences");
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  categories.forEach((category) => {
+    if (!category || typeof category !== "string") return;
+
+    const categoryKey = category.toLowerCase().replace(/\s+/g, "_");
+    const prefs = savedPreferences[categoryKey] || { ...DEFAULT_PREFERENCES };
+
+    const card = createPopoverCategoryCard(category, categoryKey, prefs);
+    container.appendChild(card);
+  });
+}
+
+/**
+ * Create a preference card for a category in the popover
+ */
+function createPopoverCategoryCard(categoryName, categoryKey, preferences) {
+  const card = document.createElement("div");
+  card.className = "category-card";
+  card.dataset.categoryKey = categoryKey;
+
+  // Header with category name
+  const header = document.createElement("div");
+  header.className = "category-header";
+
+  const title = document.createElement("div");
+  title.className = "category-title";
+  title.textContent = categoryName;
+
+  header.appendChild(title);
+
+  // Preferences grid
+  const prefsGrid = document.createElement("div");
+  prefsGrid.className = "category-preferences";
+
+  // Message Tone
+  const toneItem = createPopoverSelectPreference(
+    "Message Tone",
+    `${categoryKey}_tone`,
+    ["professional", "casual", "friendly", "formal"],
+    preferences.tone || DEFAULT_PREFERENCES.tone
+  );
+  prefsGrid.appendChild(toneItem);
+
+  // Message Length
+  const lengthItem = createPopoverSelectPreference(
+    "Message Length",
+    `${categoryKey}_length`,
+    ["brief", "medium", "detailed"],
+    preferences.length || DEFAULT_PREFERENCES.length
+  );
+  prefsGrid.appendChild(lengthItem);
+
+  // Greeting Style
+  const greetingItem = createPopoverSelectPreference(
+    "Greeting Style",
+    `${categoryKey}_greeting`,
+    ["standard", "formal", "casual", "warm", "none"],
+    preferences.greetingStyle || DEFAULT_PREFERENCES.greetingStyle
+  );
+  prefsGrid.appendChild(greetingItem);
+
+  // Closing Style
+  const closingItem = createPopoverSelectPreference(
+    "Closing Style",
+    `${categoryKey}_closing`,
+    ["standard", "formal", "casual", "warm", "none"],
+    preferences.closingStyle || DEFAULT_PREFERENCES.closingStyle
+  );
+  prefsGrid.appendChild(closingItem);
+
+  // Formality Level
+  const formalityItem = createPopoverSelectPreference(
+    "Formality Level",
+    `${categoryKey}_formality`,
+    ["very formal", "formal", "moderate", "casual", "very casual"],
+    preferences.formalityLevel || DEFAULT_PREFERENCES.formalityLevel
+  );
+  prefsGrid.appendChild(formalityItem);
+
+  // Auto-insert behavior (full width)
+  const autoInsertItem = document.createElement("div");
+  autoInsertItem.className = "preference-item full-width";
+
+  const autoInsertLabel = document.createElement("label");
+  autoInsertLabel.textContent = "Auto-insert Behavior:";
+
+  const autoInsertGroup = document.createElement("div");
+  autoInsertGroup.className = "checkbox-group";
+
+  const autoInsertCheckbox = document.createElement("input");
+  autoInsertCheckbox.type = "checkbox";
+  autoInsertCheckbox.id = `${categoryKey}_autoInsert`;
+  autoInsertCheckbox.checked = preferences.autoInsert !== false;
+
+  const autoInsertLabel2 = document.createElement("label");
+  autoInsertLabel2.htmlFor = `${categoryKey}_autoInsert`;
+  autoInsertLabel2.textContent = "Auto-insert draft messages";
+
+  autoInsertGroup.appendChild(autoInsertCheckbox);
+  autoInsertGroup.appendChild(autoInsertLabel2);
+
+  // Preview option (only shown if auto-insert is enabled)
+  const previewGroup = document.createElement("div");
+  previewGroup.className = "checkbox-group";
+  previewGroup.style.marginLeft = "24px";
+
+  const previewCheckbox = document.createElement("input");
+  previewCheckbox.type = "checkbox";
+  previewCheckbox.id = `${categoryKey}_preview`;
+  previewCheckbox.checked = preferences.previewBeforeInsert === true;
+  previewCheckbox.disabled = !autoInsertCheckbox.checked;
+
+  const previewLabel = document.createElement("label");
+  previewLabel.htmlFor = `${categoryKey}_preview`;
+  previewLabel.textContent = "Show preview before inserting";
+
+  previewGroup.appendChild(previewCheckbox);
+  previewGroup.appendChild(previewLabel);
+
+  // Update preview checkbox state when auto-insert changes
+  autoInsertCheckbox.addEventListener("change", () => {
+    previewCheckbox.disabled = !autoInsertCheckbox.checked;
+    if (!autoInsertCheckbox.checked) {
+      previewCheckbox.checked = false;
+    }
+  });
+
+  autoInsertItem.appendChild(autoInsertLabel);
+  autoInsertItem.appendChild(autoInsertGroup);
+  autoInsertItem.appendChild(previewGroup);
+  prefsGrid.appendChild(autoInsertItem);
+
+  // Custom Instructions (full width)
+  const instructionsItem = document.createElement("div");
+  instructionsItem.className = "preference-item full-width";
+
+  const instructionsLabel = document.createElement("label");
+  instructionsLabel.textContent = "Custom Instructions:";
+  instructionsLabel.htmlFor = `${categoryKey}_instructions`;
+
+  const instructionsTextarea = document.createElement("textarea");
+  instructionsTextarea.id = `${categoryKey}_instructions`;
+  instructionsTextarea.rows = 3;
+  instructionsTextarea.placeholder =
+    'Provide specific instructions for this category (e.g., "Always mention interest in remote work")';
+  instructionsTextarea.value = preferences.customInstructions || "";
+
+  instructionsItem.appendChild(instructionsLabel);
+  instructionsItem.appendChild(instructionsTextarea);
+  prefsGrid.appendChild(instructionsItem);
+
+  card.appendChild(header);
+  card.appendChild(prefsGrid);
+
+  return card;
+}
+
+/**
+ * Create a select dropdown preference item for the popover
+ */
+function createPopoverSelectPreference(labelText, id, options, selectedValue) {
+  const item = document.createElement("div");
+  item.className = "preference-item";
+
+  const label = document.createElement("label");
+  label.textContent = labelText;
+  label.htmlFor = id;
+
+  const select = document.createElement("select");
+  select.id = id;
+
+  options.forEach((option) => {
+    const optionEl = document.createElement("option");
+    optionEl.value = option;
+    optionEl.textContent = option.charAt(0).toUpperCase() + option.slice(1);
+    if (option === selectedValue) {
+      optionEl.selected = true;
+    }
+    select.appendChild(optionEl);
+  });
+
+  item.appendChild(label);
+  item.appendChild(select);
+
+  return item;
+}
+
+/**
+ * Save all preferences from the popover
+ */
+async function saveAllPopoverPreferences() {
+  try {
+    const userNameInput = popoverElement.querySelector("#popover-userName");
     const newUserName = userNameInput.value.trim();
 
-    if (newUserName) {
-      try {
-        await chrome.storage.sync.set({ userName: newUserName });
-        userName = newUserName;
-        showStatus("Settings saved successfully!", "success");
-        updateButtonText();
-      } catch (error) {
-        showStatus("Error saving settings", "error");
-        console.error("Error saving settings:", error);
+    // Load existing data
+    const result = await chrome.storage.sync.get(["categories", "categoryPreferences"]);
+    const categories = result.categories || [...DEFAULT_CATEGORIES];
+    const allPreferences = result.categoryPreferences || {};
+
+    // Collect preferences from all category cards
+    categories.forEach((category) => {
+      const categoryKey = category.toLowerCase().replace(/\s+/g, "_");
+      const card = popoverElement.querySelector(`[data-category-key="${categoryKey}"]`);
+
+      if (card) {
+        const prefs = {
+          tone: document.getElementById(`${categoryKey}_tone`)?.value || DEFAULT_PREFERENCES.tone,
+          length: document.getElementById(`${categoryKey}_length`)?.value || DEFAULT_PREFERENCES.length,
+          greetingStyle: document.getElementById(`${categoryKey}_greeting`)?.value || DEFAULT_PREFERENCES.greetingStyle,
+          closingStyle: document.getElementById(`${categoryKey}_closing`)?.value || DEFAULT_PREFERENCES.closingStyle,
+          formalityLevel:
+            document.getElementById(`${categoryKey}_formality`)?.value || DEFAULT_PREFERENCES.formalityLevel,
+          autoInsert: document.getElementById(`${categoryKey}_autoInsert`)?.checked !== false,
+          previewBeforeInsert: document.getElementById(`${categoryKey}_preview`)?.checked === true,
+          customInstructions: document.getElementById(`${categoryKey}_instructions`)?.value || "",
+        };
+
+        allPreferences[categoryKey] = prefs;
       }
-    } else {
-      showStatus("Please enter a name", "error");
-    }
-  });
+    });
 
-  // Enter key handler
-  userNameInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") {
-      saveBtn.click();
-    }
-  });
+    // Save to storage
+    await chrome.storage.sync.set({
+      userName: newUserName,
+      categoryPreferences: allPreferences,
+    });
 
-  // Focus the input
-  setTimeout(() => userNameInput.focus(), 100);
+    userName = newUserName;
+    updateButtonText();
+    showPopoverStatus("Settings saved successfully!", "success");
+  } catch (error) {
+    console.error("Error saving preferences:", error);
+    showPopoverStatus("Error saving settings", "error");
+  }
+}
+
+/**
+ * Show status message in the popover
+ */
+function showPopoverStatus(message, type) {
+  const status = popoverElement?.querySelector("#popover-status");
+  if (!status) return;
+
+  status.textContent = message;
+  status.className = `status ${type}`;
+
+  setTimeout(() => {
+    status.className = "status";
+    status.textContent = "";
+  }, 3000);
 }
 
 function closePopover() {
@@ -188,19 +465,6 @@ function updateButtonText() {
   if (buttonElement) {
     buttonElement.setAttribute("title", userName ? `Settings (${userName})` : "Settings");
   }
-}
-
-function showStatus(message, type) {
-  const status = popoverElement?.querySelector("#popover-status");
-  if (!status) return;
-
-  status.textContent = message;
-  status.className = `status ${type}`;
-
-  setTimeout(() => {
-    status.className = "status";
-    status.textContent = "";
-  }, 3000);
 }
 
 /**
@@ -953,44 +1217,44 @@ async function insertMessage(inputElement, message) {
   try {
     // Focus the element first
     inputElement.focus();
-    
+
     // Convert newlines to HTML breaks
     // Escape HTML to prevent XSS, then convert \n to <br>
     const escapeHtml = (text) => {
-      const div = document.createElement('div');
+      const div = document.createElement("div");
       div.textContent = text;
       return div.innerHTML;
     };
-    
+
     const escapedMessage = escapeHtml(message);
     // Convert newlines to <br> tags
-    const htmlContent = `<p>${escapedMessage.replace(/\n/g, '<br>')}</p>`;
-    
+    const htmlContent = `<p>${escapedMessage.replace(/\n/g, "<br>")}</p>`;
+
     // Insert text using innerHTML with proper formatting
     inputElement.innerHTML = htmlContent;
-    
+
     // Trigger input event so LinkedIn recognizes the change
-    inputElement.dispatchEvent(new InputEvent('input', { bubbles: true }));
-    
+    inputElement.dispatchEvent(new InputEvent("input", { bubbles: true }));
+
     // Workaround: Add and remove a space to trigger LinkedIn's formatting
     // This ensures newlines are properly rendered in the UI
     // LinkedIn's contenteditable needs this trigger to format newlines correctly
     setTimeout(() => {
       // Add a space at the end inside the paragraph
-      const htmlWithSpace = htmlContent.replace('</p>', ' </p>');
+      const htmlWithSpace = htmlContent.replace("</p>", " </p>");
       inputElement.innerHTML = htmlWithSpace;
       // Trigger input event
-      inputElement.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      inputElement.dispatchEvent(new InputEvent("input", { bubbles: true }));
       // Remove the space and restore proper HTML
       setTimeout(() => {
         inputElement.innerHTML = htmlContent;
         // Trigger input event again to ensure LinkedIn updates
-        inputElement.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        inputElement.dispatchEvent(new InputEvent("input", { bubbles: true }));
       }, 10);
     }, 50);
-    
+
     processedInputs.add(inputElement);
-    console.log('[Content] Auto-inserted message into chat input');
+    console.log("[Content] Auto-inserted message into chat input");
     return true;
   } catch (error) {
     console.error("[Content] Error inserting message:", error);
@@ -1005,12 +1269,12 @@ async function insertMessage(inputElement, message) {
  */
 async function storeMessageHistory(message, context) {
   try {
-    console.log('[Content] Storing message history');
-    
+    console.log("[Content] Storing message history");
+
     // Get existing message history
-    const result = await chrome.storage.local.get(['messageHistory']);
+    const result = await chrome.storage.local.get(["messageHistory"]);
     const history = result.messageHistory || [];
-    
+
     // Create history entry
     const historyEntry = {
       id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
@@ -1025,25 +1289,25 @@ async function storeMessageHistory(message, context) {
         userPreferences: context.userPreferences || null,
         userName: context.userName || null,
         // Store a simplified version of research results (avoid storing large objects)
-        hasResearchResults: !!(context.researchResults && context.researchResults.searchResults)
-      }
+        hasResearchResults: !!(context.researchResults && context.researchResults.searchResults),
+      },
     };
-    
+
     // Add to history (most recent first)
     history.unshift(historyEntry);
-    
+
     // Limit history to last 100 messages to avoid storage issues
     const maxHistory = 100;
     if (history.length > maxHistory) {
       history.splice(maxHistory);
     }
-    
+
     // Save to storage
     await chrome.storage.local.set({ messageHistory: history });
-    
-    console.log('[Content] Message history stored successfully');
+
+    console.log("[Content] Message history stored successfully");
   } catch (error) {
-    console.error('[Content] Error storing message history:', error);
+    console.error("[Content] Error storing message history:", error);
     // Don't throw - history storage failure shouldn't break message generation
   }
 }
@@ -1151,10 +1415,10 @@ async function generateAndInsertMessage(inputElement) {
     };
 
     const message = await generateMessageDraft(context);
-    
+
     // Step 8: Store message history
     await storeMessageHistory(message, context);
-    
+
     // Step 9: Insert the generated message
     await insertMessage(inputElement, message);
 
