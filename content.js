@@ -1055,11 +1055,34 @@ async function generateMessageDraft(context) {
       recipientInfo?.byline || "Not available"
     }`;
 
-    const chatContext = chatHistoryInfo?.isNewConversation
-      ? "This is a new conversation with no previous messages."
-      : `Previous conversation summary: ${chatHistoryInfo?.summary || "No summary available"}\nKey topics discussed: ${
-          chatHistoryInfo?.keyTopics?.join(", ") || "None"
-        }`;
+    // Build chat context with actual message history - CRITICAL: Last message is most important
+    let chatContext = "";
+    if (chatHistoryInfo?.isNewConversation) {
+      chatContext = "This is a new conversation with no previous messages.";
+    } else {
+      const messages = chatHistoryInfo?.messages || [];
+      const summary = chatHistoryInfo?.summary || "No summary available";
+      const keyTopics = chatHistoryInfo?.keyTopics || [];
+
+      // Format the conversation history with emphasis on the last message
+      if (messages.length > 0) {
+        // Get the last few messages (up to 10) for context, but always include the last one
+        const recentMessages = messages.slice(-10);
+        const messageHistoryText = recentMessages
+          .map((msg, idx) => {
+            const sender = msg.sender === "user" ? "You" : recipientInfo?.name || "Recipient";
+            const isLast = idx === recentMessages.length - 1;
+            const marker = isLast ? " ⬅️ LAST MESSAGE (MOST IMPORTANT)" : "";
+            return `${sender}: ${msg.text}${marker}`;
+          })
+          .join("\n\n");
+
+        chatContext = `=== CONVERSATION HISTORY (Last message is MOST IMPORTANT) ===\n\n${messageHistoryText}\n\n=== CONVERSATION SUMMARY ===\n${summary}\n\n=== KEY TOPICS ===\n${keyTopics.join(", ") || "None"}`;
+      } else {
+        // Fallback if messages array is empty but we have summary
+        chatContext = `Previous conversation summary: ${summary}\nKey topics discussed: ${keyTopics.join(", ") || "None"}`;
+      }
+    }
 
     const researchContext =
       researchResults?.searchResults?.results?.length > 0
@@ -1074,7 +1097,11 @@ async function generateMessageDraft(context) {
         }\n- Formality: ${userPreferences.formalityLevel || "moderate"}`
       : "Use professional, medium-length, moderate formality.";
 
-    const systemPrompt = `You are a LinkedIn message draft generator. Generate a personalized, contextually appropriate LinkedIn message draft based on the provided information. The message should be ready to send (or edit) and should match the user's preferences for tone, length, and formality. LinkedIn messages are direct chat messages, not emails - they should be concise, conversational, and professional without email formatting.`;
+    const systemPrompt = `You are a LinkedIn message draft generator. Generate a personalized, contextually appropriate LinkedIn message draft based on the provided information. 
+
+CRITICAL: The LAST MESSAGE in the conversation history is the MOST IMPORTANT. Your generated message must be a direct response to the last message. Read the last message carefully and respond to its specific content, questions, or requests. Do NOT generate a generic message that ignores the last message.
+
+The message should be ready to send (or edit) and should match the user's preferences for tone, length, and formality. LinkedIn messages are direct chat messages, not emails - they should be concise, conversational, and professional without email formatting.`;
 
     const userPrompt = `Generate a LinkedIn message draft with the following context:
 
@@ -1093,14 +1120,15 @@ ${userName ? `Your name: ${userName}` : ""}
 Current time: ${new Date().toLocaleString()}
 
 Generate a personalized message draft that:
+- **CRITICALLY IMPORTANT: Responds directly to the LAST MESSAGE in the conversation history** - This is the most important requirement. Read the last message carefully and address its specific content, questions, or requests. Do NOT generate a generic message that could apply to any conversation.
 - Is appropriate for the interaction category
 - Matches the specified tone, length, and formality preferences
-- References relevant context from the conversation or recipient info when appropriate
+- References relevant context from the conversation history, especially the last message
 - Is professional and ready to send (user will review and edit if needed)
 - Is formatted as a LinkedIn chat message (NOT an email - no subject line, no email-style formatting)
 - Is concise and direct, not overly formal or email-like
 - Is complete and specific - do NOT include any placeholders, square brackets, [INSERT] markers, or anything for the user to fill in
-- Uses specific details from the context provided rather than generic placeholders
+- Uses specific details from the conversation history and context provided rather than generic placeholders
 
 Return only the message text, nothing else. Do not include a subject line or email headers.`;
 
