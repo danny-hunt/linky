@@ -231,7 +231,8 @@ function findChatInputFields() {
 
 /**
  * Inserts placeholder message into a chat input field
- * Uses minimal DOM manipulation to avoid triggering LinkedIn's refresh handlers
+ * Uses proper text insertion methods to ensure LinkedIn recognizes the content
+ * and hides its placeholder text
  */
 function insertPlaceholderMessage(inputElement) {
   if (!inputElement || processedInputs.has(inputElement)) {
@@ -252,40 +253,64 @@ function insertPlaceholderMessage(inputElement) {
   }
   
   try {
-    // Clear any existing content/placeholder by setting innerHTML with proper structure
-    // LinkedIn's contenteditable uses <p> tags for text content
-    // Setting innerHTML with actual content (not just <p><br></p>) ensures placeholder CSS is removed
-    // Escape HTML to prevent XSS and ensure proper text rendering
-    const escapedMessage = PLACEHOLDER_MESSAGE
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-    inputElement.innerHTML = `<p>${escapedMessage}</p>`;
+    // Focus the element first to ensure it's in the correct state
+    inputElement.focus();
     
-    // Remove placeholder attribute if it exists
-    if (inputElement.hasAttribute('data-placeholder')) {
-      inputElement.removeAttribute('data-placeholder');
-    }
+    // Clear any existing content completely
+    inputElement.innerHTML = '';
     
-    // Mark as processed immediately to prevent re-processing
-    processedInputs.add(inputElement);
-    
-    // Use requestAnimationFrame to trigger the input event after the DOM update
-    // This ensures LinkedIn's handlers see the change but don't trigger refresh
+    // Wait a frame to ensure the DOM is updated
     requestAnimationFrame(() => {
-      // Only trigger a minimal input event if the element still exists and has our text
-      if (inputElement.isConnected && inputElement.textContent.trim() === PLACEHOLDER_MESSAGE) {
-        const inputEvent = new Event('input', { 
-          bubbles: true, 
-          cancelable: false 
-        });
-        inputElement.dispatchEvent(inputEvent);
+      try {
+        // Use execCommand to insert text as if typed - this is the most reliable method
+        // It ensures LinkedIn recognizes the content and hides the placeholder
+        const selection = window.getSelection();
+        const range = document.createRange();
+        
+        // Set range to the contenteditable element
+        range.selectNodeContents(inputElement);
+        range.collapse(true); // Collapse to start
+        
+        selection.removeAllRanges();
+        selection.addRange(range);
+        
+        // Insert text using execCommand (simulates actual typing)
+        // This method is recognized by LinkedIn as user input
+        if (document.execCommand && document.execCommand('insertText', false, PLACEHOLDER_MESSAGE)) {
+          // Success - text was inserted
+          // Trigger input event to ensure LinkedIn processes it
+          setTimeout(() => {
+            const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+            inputElement.dispatchEvent(inputEvent);
+            processedInputs.add(inputElement);
+            console.log('Auto-inserted placeholder message into chat input');
+          }, 0);
+        } else {
+          // Fallback: Direct text insertion with proper structure
+          // Create a paragraph element with the text
+          const p = document.createElement('p');
+          p.textContent = PLACEHOLDER_MESSAGE;
+          inputElement.appendChild(p);
+          
+          // Remove any placeholder-related attributes
+          inputElement.removeAttribute('data-placeholder');
+          inputElement.removeAttribute('placeholder');
+          
+          // Trigger events to notify LinkedIn
+          const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+          inputElement.dispatchEvent(inputEvent);
+          
+          // Also trigger beforeinput event
+          inputElement.dispatchEvent(new Event('beforeinput', { bubbles: true, cancelable: true }));
+          
+          processedInputs.add(inputElement);
+          console.log('Auto-inserted placeholder message into chat input (fallback method)');
+        }
+      } catch (error) {
+        console.error('Error in text insertion:', error);
       }
     });
     
-    console.log('Auto-inserted placeholder message into chat input');
     return true;
   } catch (error) {
     console.error('Error inserting placeholder message:', error);
