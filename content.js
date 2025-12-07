@@ -7,8 +7,6 @@
  * Current implementation is placeholder - refer to PRD.md for target functionality.
  */
 let userName = "";
-let buttonElement = null;
-let popoverElement = null;
 
 // Default interaction categories as per PRD.md
 const DEFAULT_CATEGORIES = [
@@ -38,434 +36,15 @@ chrome.storage.sync.get(["userName"], (result) => {
   if (result.userName) {
     userName = result.userName;
   }
-  createExtensionButton();
 });
 
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === "updateName") {
-    userName = request.userName;
-    updateButtonText();
+  if (request.action === "updateName" || request.action === "preferencesUpdated") {
+    userName = request.userName || userName;
   }
 });
 
-function createExtensionButton() {
-  // Remove existing button if it exists
-  const existingButton = document.getElementById("linkedin-extension-button");
-  if (existingButton) {
-    existingButton.remove();
-  }
-
-  // Create button element
-  buttonElement = document.createElement("button");
-  buttonElement.id = "linkedin-extension-button";
-  buttonElement.className = "linkedin-extension-button";
-  buttonElement.innerHTML = "⚙️";
-  buttonElement.setAttribute("aria-label", "Extension Settings");
-
-  // Add click handler to toggle popover
-  buttonElement.addEventListener("click", (e) => {
-    e.stopPropagation();
-    togglePopover();
-  });
-
-  // Insert button into the page
-  const body = document.body;
-  if (body) {
-    body.appendChild(buttonElement);
-  }
-
-  // Close popover when clicking outside
-  document.addEventListener("click", (e) => {
-    if (popoverElement && !popoverElement.contains(e.target) && !buttonElement.contains(e.target)) {
-      closePopover();
-    }
-  });
-}
-
-function togglePopover() {
-  if (popoverElement && popoverElement.style.display !== "none") {
-    closePopover();
-  } else {
-    openPopover();
-  }
-}
-
-async function openPopover() {
-  // Remove existing popover if it exists
-  const existingPopover = document.getElementById("linkedin-extension-popover");
-  if (existingPopover) {
-    existingPopover.remove();
-  }
-
-  // Create popover element
-  popoverElement = document.createElement("div");
-  popoverElement.id = "linkedin-extension-popover";
-  popoverElement.className = "linkedin-extension-popover";
-
-  // Load saved preferences
-  const result = await chrome.storage.sync.get(["userName", "categories", "categoryPreferences"]);
-
-  const categories = result.categories || [...DEFAULT_CATEGORIES];
-  const categoryPreferences = result.categoryPreferences || {};
-
-  // Create popover content (preferences menu)
-  popoverElement.innerHTML = `
-    <div class="popover-header">
-      <h2>Linky Settings</h2>
-      <button class="popover-close" aria-label="Close">×</button>
-    </div>
-    <div class="popover-content">
-      <div class="settings-section">
-        <h3>General Settings</h3>
-        <div class="form-group">
-          <label for="popover-userName">Your Name:</label>
-          <input type="text" id="popover-userName" placeholder="Enter your name" value="${userName || ""}">
-        </div>
-      </div>
-      
-      <div class="settings-section">
-        <h3>Interaction Category Preferences</h3>
-        <p class="section-description">Configure message preferences for each interaction type</p>
-        <div id="popover-categoryPreferences"></div>
-      </div>
-
-      <div class="actions">
-        <button id="popover-saveBtn" class="btn-primary">Save All Preferences</button>
-      </div>
-      <div id="popover-status" class="status"></div>
-    </div>
-  `;
-
-  // Insert popover into the page
-  const body = document.body;
-  if (body) {
-    body.appendChild(popoverElement);
-  }
-
-  // Render category preferences
-  renderPopoverCategoryPreferences(categories, categoryPreferences);
-
-  // Position popover near the button
-  positionPopover();
-
-  // Add event listeners
-  const closeBtn = popoverElement.querySelector(".popover-close");
-  const saveBtn = popoverElement.querySelector("#popover-saveBtn");
-
-  closeBtn.addEventListener("click", closePopover);
-  saveBtn.addEventListener("click", saveAllPopoverPreferences);
-
-  // Focus the name input
-  const userNameInput = popoverElement.querySelector("#popover-userName");
-  setTimeout(() => userNameInput.focus(), 100);
-}
-
-/**
- * Render category preferences in the popover
- */
-function renderPopoverCategoryPreferences(categories, savedPreferences) {
-  const container = popoverElement.querySelector("#popover-categoryPreferences");
-  if (!container) return;
-
-  container.innerHTML = "";
-
-  categories.forEach((category) => {
-    if (!category || typeof category !== "string") return;
-
-    const categoryKey = category.toLowerCase().replace(/\s+/g, "_");
-    const prefs = savedPreferences[categoryKey] || { ...DEFAULT_PREFERENCES };
-
-    const card = createPopoverCategoryCard(category, categoryKey, prefs);
-    container.appendChild(card);
-  });
-}
-
-/**
- * Create a preference card for a category in the popover
- */
-function createPopoverCategoryCard(categoryName, categoryKey, preferences) {
-  const card = document.createElement("div");
-  card.className = "category-card";
-  card.dataset.categoryKey = categoryKey;
-
-  // Header with category name
-  const header = document.createElement("div");
-  header.className = "category-header";
-
-  const title = document.createElement("div");
-  title.className = "category-title";
-  title.textContent = categoryName;
-
-  header.appendChild(title);
-
-  // Preferences grid
-  const prefsGrid = document.createElement("div");
-  prefsGrid.className = "category-preferences";
-
-  // Message Tone
-  const toneItem = createPopoverSelectPreference(
-    "Message Tone",
-    `${categoryKey}_tone`,
-    ["professional", "casual", "friendly", "formal"],
-    preferences.tone || DEFAULT_PREFERENCES.tone
-  );
-  prefsGrid.appendChild(toneItem);
-
-  // Message Length
-  const lengthItem = createPopoverSelectPreference(
-    "Message Length",
-    `${categoryKey}_length`,
-    ["brief", "medium", "detailed"],
-    preferences.length || DEFAULT_PREFERENCES.length
-  );
-  prefsGrid.appendChild(lengthItem);
-
-  // Greeting Style
-  const greetingItem = createPopoverSelectPreference(
-    "Greeting Style",
-    `${categoryKey}_greeting`,
-    ["standard", "formal", "casual", "warm", "none"],
-    preferences.greetingStyle || DEFAULT_PREFERENCES.greetingStyle
-  );
-  prefsGrid.appendChild(greetingItem);
-
-  // Closing Style
-  const closingItem = createPopoverSelectPreference(
-    "Closing Style",
-    `${categoryKey}_closing`,
-    ["standard", "formal", "casual", "warm", "none"],
-    preferences.closingStyle || DEFAULT_PREFERENCES.closingStyle
-  );
-  prefsGrid.appendChild(closingItem);
-
-  // Formality Level
-  const formalityItem = createPopoverSelectPreference(
-    "Formality Level",
-    `${categoryKey}_formality`,
-    ["very formal", "formal", "moderate", "casual", "very casual"],
-    preferences.formalityLevel || DEFAULT_PREFERENCES.formalityLevel
-  );
-  prefsGrid.appendChild(formalityItem);
-
-  // Auto-insert behavior (full width)
-  const autoInsertItem = document.createElement("div");
-  autoInsertItem.className = "preference-item full-width";
-
-  const autoInsertLabel = document.createElement("label");
-  autoInsertLabel.textContent = "Auto-insert Behavior:";
-
-  const autoInsertGroup = document.createElement("div");
-  autoInsertGroup.className = "checkbox-group";
-
-  const autoInsertCheckbox = document.createElement("input");
-  autoInsertCheckbox.type = "checkbox";
-  autoInsertCheckbox.id = `${categoryKey}_autoInsert`;
-  autoInsertCheckbox.checked = preferences.autoInsert !== false;
-
-  const autoInsertLabel2 = document.createElement("label");
-  autoInsertLabel2.htmlFor = `${categoryKey}_autoInsert`;
-  autoInsertLabel2.textContent = "Auto-insert draft messages";
-
-  autoInsertGroup.appendChild(autoInsertCheckbox);
-  autoInsertGroup.appendChild(autoInsertLabel2);
-
-  // Preview option (only shown if auto-insert is enabled)
-  const previewGroup = document.createElement("div");
-  previewGroup.className = "checkbox-group";
-  previewGroup.style.marginLeft = "24px";
-
-  const previewCheckbox = document.createElement("input");
-  previewCheckbox.type = "checkbox";
-  previewCheckbox.id = `${categoryKey}_preview`;
-  previewCheckbox.checked = preferences.previewBeforeInsert === true;
-  previewCheckbox.disabled = !autoInsertCheckbox.checked;
-
-  const previewLabel = document.createElement("label");
-  previewLabel.htmlFor = `${categoryKey}_preview`;
-  previewLabel.textContent = "Show preview before inserting";
-
-  previewGroup.appendChild(previewCheckbox);
-  previewGroup.appendChild(previewLabel);
-
-  // Update preview checkbox state when auto-insert changes
-  autoInsertCheckbox.addEventListener("change", () => {
-    previewCheckbox.disabled = !autoInsertCheckbox.checked;
-    if (!autoInsertCheckbox.checked) {
-      previewCheckbox.checked = false;
-    }
-  });
-
-  autoInsertItem.appendChild(autoInsertLabel);
-  autoInsertItem.appendChild(autoInsertGroup);
-  autoInsertItem.appendChild(previewGroup);
-  prefsGrid.appendChild(autoInsertItem);
-
-  // Custom Instructions (full width)
-  const instructionsItem = document.createElement("div");
-  instructionsItem.className = "preference-item full-width";
-
-  const instructionsLabel = document.createElement("label");
-  instructionsLabel.textContent = "Custom Instructions:";
-  instructionsLabel.htmlFor = `${categoryKey}_instructions`;
-
-  const instructionsTextarea = document.createElement("textarea");
-  instructionsTextarea.id = `${categoryKey}_instructions`;
-  instructionsTextarea.rows = 3;
-  instructionsTextarea.placeholder =
-    'Provide specific instructions for this category (e.g., "Always mention interest in remote work")';
-  instructionsTextarea.value = preferences.customInstructions || "";
-
-  instructionsItem.appendChild(instructionsLabel);
-  instructionsItem.appendChild(instructionsTextarea);
-  prefsGrid.appendChild(instructionsItem);
-
-  card.appendChild(header);
-  card.appendChild(prefsGrid);
-
-  return card;
-}
-
-/**
- * Create a select dropdown preference item for the popover
- */
-function createPopoverSelectPreference(labelText, id, options, selectedValue) {
-  const item = document.createElement("div");
-  item.className = "preference-item";
-
-  const label = document.createElement("label");
-  label.textContent = labelText;
-  label.htmlFor = id;
-
-  const select = document.createElement("select");
-  select.id = id;
-
-  options.forEach((option) => {
-    const optionEl = document.createElement("option");
-    optionEl.value = option;
-    optionEl.textContent = option.charAt(0).toUpperCase() + option.slice(1);
-    if (option === selectedValue) {
-      optionEl.selected = true;
-    }
-    select.appendChild(optionEl);
-  });
-
-  item.appendChild(label);
-  item.appendChild(select);
-
-  return item;
-}
-
-/**
- * Save all preferences from the popover
- */
-async function saveAllPopoverPreferences() {
-  try {
-    const userNameInput = popoverElement.querySelector("#popover-userName");
-    const newUserName = userNameInput.value.trim();
-
-    // Load existing data
-    const result = await chrome.storage.sync.get(["categories", "categoryPreferences"]);
-    const categories = result.categories || [...DEFAULT_CATEGORIES];
-    const allPreferences = result.categoryPreferences || {};
-
-    // Collect preferences from all category cards
-    categories.forEach((category) => {
-      const categoryKey = category.toLowerCase().replace(/\s+/g, "_");
-      const card = popoverElement.querySelector(`[data-category-key="${categoryKey}"]`);
-
-      if (card) {
-        const prefs = {
-          tone: document.getElementById(`${categoryKey}_tone`)?.value || DEFAULT_PREFERENCES.tone,
-          length: document.getElementById(`${categoryKey}_length`)?.value || DEFAULT_PREFERENCES.length,
-          greetingStyle: document.getElementById(`${categoryKey}_greeting`)?.value || DEFAULT_PREFERENCES.greetingStyle,
-          closingStyle: document.getElementById(`${categoryKey}_closing`)?.value || DEFAULT_PREFERENCES.closingStyle,
-          formalityLevel:
-            document.getElementById(`${categoryKey}_formality`)?.value || DEFAULT_PREFERENCES.formalityLevel,
-          autoInsert: document.getElementById(`${categoryKey}_autoInsert`)?.checked !== false,
-          previewBeforeInsert: document.getElementById(`${categoryKey}_preview`)?.checked === true,
-          customInstructions: document.getElementById(`${categoryKey}_instructions`)?.value || "",
-        };
-
-        allPreferences[categoryKey] = prefs;
-      }
-    });
-
-    // Save to storage
-    await chrome.storage.sync.set({
-      userName: newUserName,
-      categoryPreferences: allPreferences,
-    });
-
-    userName = newUserName;
-    updateButtonText();
-    showPopoverStatus("Settings saved successfully!", "success");
-  } catch (error) {
-    console.error("Error saving preferences:", error);
-    showPopoverStatus("Error saving settings", "error");
-  }
-}
-
-/**
- * Show status message in the popover
- */
-function showPopoverStatus(message, type) {
-  const status = popoverElement?.querySelector("#popover-status");
-  if (!status) return;
-
-  status.textContent = message;
-  status.className = `status ${type}`;
-
-  setTimeout(() => {
-    status.className = "status";
-    status.textContent = "";
-  }, 3000);
-}
-
-function closePopover() {
-  if (popoverElement) {
-    popoverElement.style.display = "none";
-    setTimeout(() => {
-      if (popoverElement && popoverElement.parentNode) {
-        popoverElement.remove();
-      }
-      popoverElement = null;
-    }, 200);
-  }
-}
-
-function positionPopover() {
-  if (!buttonElement || !popoverElement) return;
-
-  const buttonRect = buttonElement.getBoundingClientRect();
-  const popoverRect = popoverElement.getBoundingClientRect();
-
-  // Position popover below and to the right of the button
-  const top = buttonRect.bottom + 8;
-  const left = buttonRect.left;
-
-  popoverElement.style.top = `${top + window.scrollY}px`;
-  popoverElement.style.left = `${left + window.scrollX}px`;
-
-  // Adjust if popover goes off screen
-  const viewportWidth = window.innerWidth;
-  const viewportHeight = window.innerHeight;
-
-  if (left + popoverRect.width > viewportWidth) {
-    popoverElement.style.left = `${viewportWidth - popoverRect.width - 10 + window.scrollX}px`;
-  }
-
-  if (top + popoverRect.height > viewportHeight + window.scrollY) {
-    popoverElement.style.top = `${buttonRect.top - popoverRect.height - 8 + window.scrollY}px`;
-  }
-}
-
-function updateButtonText() {
-  // Button text stays as icon, but we could update tooltip if needed
-  if (buttonElement) {
-    buttonElement.setAttribute("title", userName ? `Settings (${userName})` : "Settings");
-  }
-}
 
 /**
  * Extracts recipient information from LinkedIn chat interface
@@ -1640,30 +1219,24 @@ function detectAndInsertChatMessages() {
 // Initialize chat detection
 detectAndInsertChatMessages();
 
-// Create button on page load
+// Initialize chat detection on page load
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
-    createExtensionButton();
     detectAndInsertChatMessages();
   });
 } else {
-  createExtensionButton();
   detectAndInsertChatMessages();
 }
 
-// Re-create button when navigating (LinkedIn is a SPA)
+// Re-detect chat interfaces when navigating (LinkedIn is a SPA)
 let lastUrl = location.href;
 let chatCheckTimeout = null;
 const domObserver = new MutationObserver(() => {
   const url = location.href;
   if (url !== lastUrl) {
     lastUrl = url;
-    setTimeout(() => {
-      createExtensionButton();
-      closePopover();
-      // Reset processed inputs on navigation to allow re-detection
-      // Note: WeakSet will automatically clear when elements are removed from DOM
-    }, 1000);
+    // Reset processed inputs on navigation to allow re-detection
+    // Note: WeakSet will automatically clear when elements are removed from DOM
   }
 
   // Also check for new chat interfaces when DOM changes
@@ -1677,16 +1250,3 @@ const domObserver = new MutationObserver(() => {
   }, 1000);
 });
 domObserver.observe(document, { subtree: true, childList: true });
-
-// Reposition popover on scroll/resize
-window.addEventListener("scroll", () => {
-  if (popoverElement && popoverElement.style.display !== "none") {
-    positionPopover();
-  }
-});
-
-window.addEventListener("resize", () => {
-  if (popoverElement && popoverElement.style.display !== "none") {
-    positionPopover();
-  }
-});
