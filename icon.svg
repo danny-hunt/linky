@@ -1,0 +1,27 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- LinkedIn Blue Background Circle -->
+  <circle cx="64" cy="64" r="60" fill="#0077B5"/>
+  
+  <!-- Linky's Head (rounded square for friendly look) -->
+  <rect x="34" y="24" width="60" height="60" rx="12" ry="12" fill="#FFFFFF"/>
+  
+  <!-- Linky's Eyes (friendly and fun) -->
+  <circle cx="52" cy="48" r="6" fill="#0077B5"/>
+  <circle cx="76" cy="48" r="6" fill="#0077B5"/>
+  <circle cx="52" cy="48" r="3" fill="#FFFFFF"/>
+  <circle cx="76" cy="48" r="3" fill="#FFFFFF"/>
+  
+  <!-- Linky's Smile (cheerful) -->
+  <path d="M 50 62 Q 64 72 78 62" stroke="#0077B5" stroke-width="3" fill="none" stroke-linecap="round"/>
+  
+  <!-- Linky's "in" symbol on chest (LinkedIn logo reference) -->
+  <g transform="translate(64, 70)">
+    <!-- The "in" text styled like LinkedIn logo -->
+    <text x="0" y="0" font-family="Arial, sans-serif" font-size="20" font-weight="bold" fill="#0077B5" text-anchor="middle" dominant-baseline="middle">in</text>
+  </g>
+  
+  <!-- Optional: Add a small sparkle/star for fun -->
+  <g transform="translate(90, 30)">
+    <path d="M 0,-8 L 2,-2 L 8,0 L 2,2 L 0,8 L -2,2 L -8,0 L -2,-2 Z" fill="#FFFFFF" opacity="0.9"/>
+  </g>
+</svg>
