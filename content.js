@@ -335,17 +335,32 @@ function extractRecipientInfo() {
 
     // Common selectors for recipient byline (job title, company, location)
     // Prioritize specific selectors and scope to conversation container if available
+    // Note: LinkedIn uses different components for bylines in different contexts
     const bylineSelectors = [
+      // Profile card component (msg-s-profile-card) - most common in message threads
+      "div.msg-s-profile-card div.artdeco-entity-lockup__subtitle",
+      "div.artdeco-entity-lockup__subtitle",
+      // Message list byline
       "div.msg-s-message-list__byline",
       "span.msg-s-message-list__byline",
+      // Header byline
       'div[data-testid="message-header-byline"]',
       "div.msg-conversation-header__subtitle",
       "p.msg-conversation-header__subtitle",
       "span.msg-conversation-header__subtitle",
+      // Overlay bubble header subtitle
+      "div.msg-overlay-conversation-bubble-header div.artdeco-entity-lockup__subtitle",
+      // Entity lockup subtitle in various contexts
+      "div.artdeco-entity-lockup__subtitle div",
     ];
 
     // Broader selectors (only use if we have a container to scope to)
-    const broadBylineSelectors = ['div[class*="byline"]', 'span[class*="byline"]'];
+    const broadBylineSelectors = [
+      'div[class*="byline"]', 
+      'span[class*="byline"]',
+      'div[class*="subtitle"]',
+      'span[class*="subtitle"]',
+    ];
 
     let byline = null;
     let usedBylineSelector = null;
@@ -359,7 +374,22 @@ function extractRecipientInfo() {
           // Verify element is visible and in the viewport
           const rect = element.getBoundingClientRect();
           if (rect.width > 0 && rect.height > 0) {
-            const text = element.textContent?.trim();
+            // Try textContent first
+            let text = element.textContent?.trim();
+            
+            // If no text, try title attribute (common in LinkedIn components)
+            if (!text || text.length === 0) {
+              text = element.getAttribute("title")?.trim();
+            }
+            
+            // If still no text, check nested divs (some components nest the text)
+            if (!text || text.length === 0) {
+              const nestedDiv = element.querySelector("div");
+              if (nestedDiv) {
+                text = nestedDiv.textContent?.trim() || nestedDiv.getAttribute("title")?.trim();
+              }
+            }
+            
             if (text && text.length > 0) {
               // Additional validation: if we found a name, ensure byline is near it
               if (name && usedSelector) {
@@ -401,7 +431,22 @@ function extractRecipientInfo() {
           if (element) {
             const rect = element.getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0) {
-              const text = element.textContent?.trim();
+              // Try textContent first
+              let text = element.textContent?.trim();
+              
+              // If no text, try title attribute
+              if (!text || text.length === 0) {
+                text = element.getAttribute("title")?.trim();
+              }
+              
+              // If still no text, check nested divs
+              if (!text || text.length === 0) {
+                const nestedDiv = element.querySelector("div");
+                if (nestedDiv) {
+                  text = nestedDiv.textContent?.trim() || nestedDiv.getAttribute("title")?.trim();
+                }
+              }
+              
               if (text && text.length > 0) {
                 // Validate proximity to name if we found one
                 if (name && usedSelector) {
@@ -431,6 +476,69 @@ function extractRecipientInfo() {
         } catch (selectorError) {
           continue;
         }
+      }
+    }
+
+    // Final fallback: Search specifically in profile card components
+    // This handles cases where the byline is in msg-s-profile-card components
+    if (!byline) {
+      try {
+        const searchRoot = conversationContainer || document;
+        // Look for profile card components
+        const profileCards = searchRoot.querySelectorAll("div.msg-s-profile-card");
+        
+        for (const profileCard of profileCards) {
+          // Look for subtitle within the profile card
+          const subtitleElement = profileCard.querySelector("div.artdeco-entity-lockup__subtitle");
+          if (subtitleElement) {
+            const rect = subtitleElement.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              // Try textContent first
+              let text = subtitleElement.textContent?.trim();
+              
+              // If no text, try title attribute
+              if (!text || text.length === 0) {
+                text = subtitleElement.getAttribute("title")?.trim();
+              }
+              
+              // If still no text, check nested divs
+              if (!text || text.length === 0) {
+                const nestedDiv = subtitleElement.querySelector("div");
+                if (nestedDiv) {
+                  text = nestedDiv.textContent?.trim() || nestedDiv.getAttribute("title")?.trim();
+                }
+              }
+              
+              if (text && text.length > 0) {
+                // Validate proximity to name if we found one
+                if (name && usedSelector) {
+                  try {
+                    const nameElement = document.querySelector(usedSelector);
+                    if (nameElement) {
+                      const nameRect = nameElement.getBoundingClientRect();
+                      const bylineRect = subtitleElement.getBoundingClientRect();
+                      const verticalDistance = Math.abs(bylineRect.top - nameRect.bottom);
+                      const horizontalOverlap = !(bylineRect.right < nameRect.left || bylineRect.left > nameRect.right);
+                      // More lenient distance check for profile cards (they might be further away)
+                      if (verticalDistance > 300 && !horizontalOverlap) {
+                        console.log("[Content] Byline in profile card too far from name, skipping:", text);
+                        continue;
+                      }
+                    }
+                  } catch (e) {
+                    // Continue if validation fails
+                  }
+                }
+                byline = text;
+                usedBylineSelector = "profile-card-fallback";
+                console.log("[Content] Found recipient byline in profile card:", byline);
+                break;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.log("[Content] Error in profile card fallback search:", error);
       }
     }
 
