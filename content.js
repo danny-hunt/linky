@@ -610,38 +610,68 @@ async function extractChatHistoryInfo(chatContainer) {
 
     console.log("[Content] Sending chat history DOM to OpenAI for analysis");
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content:
-              'You are a LinkedIn chat history analyzer. Extract the key information from the provided HTML of a LinkedIn chat conversation. Return a JSON object with: messages (array of {sender: "user"|"recipient", text: string, timestamp: string|null}), summary (brief summary of conversation), isNewConversation (boolean), and keyTopics (array of main topics discussed). Only extract visible, meaningful messages. Ignore UI elements, placeholders, and empty messages.',
-          },
-          {
-            role: "user",
-            content: `Analyze this LinkedIn chat HTML and extract the conversation information:\n\n${truncatedContent}`,
-          },
-        ],
-        max_tokens: 1000,
-        temperature: 0.3,
-        response_format: { type: "json_object" },
-      }),
-    });
+    // Use cached OpenAI call with LangCache
+    // Check if cachedOpenAICall is available (from langcache.js)
+    const cachedCall = typeof cachedOpenAICall !== 'undefined' ? cachedOpenAICall : null;
+    
+    const systemPrompt = 'You are a LinkedIn chat history analyzer. Extract the key information from the provided HTML of a LinkedIn chat conversation. Return a JSON object with: messages (array of {sender: "user"|"recipient", text: string, timestamp: string|null}), summary (brief summary of conversation), isNewConversation (boolean), and keyTopics (array of main topics discussed). Only extract visible, meaningful messages. Ignore UI elements, placeholders, and empty messages.';
+    
+    let data;
+    if (cachedCall) {
+      data = await cachedCall({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt,
+        },
+        {
+          role: "user",
+          content: `Analyze this LinkedIn chat HTML and extract the conversation information:\n\n${truncatedContent}`,
+        },
+      ],
+      max_tokens: 1000,
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      openaiApiKey: openaiApiKey,
+      useSemanticCache: true,
+      semanticThreshold: 0.80, // Slightly lower threshold for chat history analysis
+      });
+    } else {
+      // Fallback to direct API call if LangCache is not available
+      console.warn("[Content] LangCache not available, using direct OpenAI API call");
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Analyze this LinkedIn chat HTML and extract the conversation information:\n\n${truncatedContent}` },
+          ],
+          max_tokens: 1000,
+          temperature: 0.3,
+          response_format: { type: "json_object" },
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("[Content] OpenAI API call failed for chat history:", response.status, errorText);
+        return null;
+      }
+      
+      data = await response.json();
+    }
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("[Content] OpenAI API call failed for chat history:", response.status, errorText);
+    if (!data || !data.choices?.[0]?.message?.content) {
+      console.error("[Content] OpenAI API call failed for chat history or returned empty response");
       return null;
     }
 
-    const data = await response.json();
     const extractedInfo = JSON.parse(data.choices?.[0]?.message?.content || "{}");
 
     console.log("[Content] Extracted chat history info:", extractedInfo);
@@ -717,42 +747,73 @@ async function categorizeInteraction(chatHistoryInfo, recipientInfo) {
       currentTime,
     });
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are a LinkedIn interaction categorizer. Categorize the conversation into one of these categories: ${categories.join(
-              ", "
-            )}. Return only the category name, nothing else.`,
-          },
-          {
-            role: "user",
-            content: `Categorize this LinkedIn conversation:\n\nRecipient: ${
-              recipientInfo?.name || "Unknown"
-            }\nRecipient Info: ${recipientByline}\n\nConversation Summary: ${chatSummary}\nIs New Conversation: ${isNewConversation}\nKey Topics: ${
-              keyTopics.join(", ") || "None"
-            }\n\nWhich category does this belong to?`,
-          },
-        ],
-        max_tokens: 50,
-        temperature: 0.3,
-      }),
-    });
+    // Use cached OpenAI call with LangCache
+    const cachedCall = typeof cachedOpenAICall !== 'undefined' ? cachedOpenAICall : null;
+    
+    const systemPrompt = `You are a LinkedIn interaction categorizer. Categorize the conversation into one of these categories: ${categories.join(
+      ", "
+    )}. Return only the category name, nothing else.`;
+    
+    const userPrompt = `Categorize this LinkedIn conversation:\n\nRecipient: ${
+      recipientInfo?.name || "Unknown"
+    }\nRecipient Info: ${recipientByline}\n\nConversation Summary: ${chatSummary}\nIs New Conversation: ${isNewConversation}\nKey Topics: ${
+      keyTopics.join(", ") || "None"
+    }\n\nWhich category does this belong to?`;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.warn("[Content] OpenAI API call failed for categorization:", response.status, errorText);
+    let data;
+    if (cachedCall) {
+      data = await cachedCall({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: systemPrompt,
+        },
+        {
+          role: "user",
+          content: userPrompt,
+        },
+      ],
+      max_tokens: 50,
+      temperature: 0.3,
+      openaiApiKey: openaiApiKey,
+      useSemanticCache: true,
+      semanticThreshold: 0.85,
+      });
+    } else {
+      // Fallback to direct API call if LangCache is not available
+      console.warn("[Content] LangCache not available, using direct OpenAI API call");
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: 50,
+          temperature: 0.3,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn("[Content] OpenAI API call failed for categorization:", response.status, errorText);
+        return "Recruiter inbound"; // Default fallback
+      }
+      
+      data = await response.json();
+    }
+
+    if (!data || !data.choices?.[0]?.message?.content) {
+      console.warn("[Content] OpenAI API call failed for categorization or returned empty response");
       return "Recruiter inbound"; // Default fallback
     }
 
-    const data = await response.json();
     const category = data.choices?.[0]?.message?.content?.trim();
 
     // Validate category is in the list
@@ -839,29 +900,55 @@ Return only the message text, nothing else.`;
 
     console.log("[Content] Sending message generation request to OpenAI");
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${openaiApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        max_tokens: 500,
-        temperature: 0.7,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+    // Use cached OpenAI call with LangCache
+    const cachedCall = typeof cachedOpenAICall !== 'undefined' ? cachedOpenAICall : null;
+    
+    let data;
+    if (cachedCall) {
+      data = await cachedCall({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      max_tokens: 500,
+      temperature: 0.7,
+      openaiApiKey: openaiApiKey,
+      useSemanticCache: true,
+      semanticThreshold: 0.90, // Higher threshold for message generation to ensure quality
+      });
+    } else {
+      // Fallback to direct API call if LangCache is not available
+      console.warn("[Content] LangCache not available, using direct OpenAI API call");
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${openaiApiKey}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: 500,
+          temperature: 0.7,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+      }
+      
+      data = await response.json();
     }
 
-    const data = await response.json();
+    if (!data || !data.choices?.[0]?.message?.content) {
+      throw new Error("OpenAI API error: Empty response");
+    }
+
     const message = data.choices?.[0]?.message?.content?.trim();
 
     if (!message) {

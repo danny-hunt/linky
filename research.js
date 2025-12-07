@@ -40,37 +40,68 @@ async function generateSearchTerm(recipientInfo) {
     if (openaiApiKey) {
       console.log('[Research] Using OpenAI to generate optimized search term');
       
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${openaiApiKey}`
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a search query optimizer. Given a person\'s name and professional byline, generate an optimal Google search query that will find relevant information about them. Return only the search query, nothing else.'
-            },
-            {
-              role: 'user',
-              content: `Name: ${name}\nByline: ${byline || 'N/A'}\n\nGenerate an optimal Google search query to find information about this person.`
-            }
-          ],
-          max_tokens: 50,
-          temperature: 0.3
-        })
-      });
+      // Use cached OpenAI call with LangCache
+      const cachedCall = typeof cachedOpenAICall !== 'undefined' ? cachedOpenAICall : null;
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.warn('[Research] OpenAI API call failed:', response.status, errorText);
+      const systemPrompt = 'You are a search query optimizer. Given a person\'s name and professional byline, generate an optimal Google search query that will find relevant information about them. Return only the search query, nothing else.';
+      const userPrompt = `Name: ${name}\nByline: ${byline || 'N/A'}\n\nGenerate an optimal Google search query to find information about this person.`;
+      
+      let data;
+      if (cachedCall) {
+        data = await cachedCall({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt,
+          },
+          {
+            role: 'user',
+            content: userPrompt,
+          },
+        ],
+        max_tokens: 50,
+        temperature: 0.3,
+        openaiApiKey: openaiApiKey,
+        useSemanticCache: true,
+        semanticThreshold: 0.85,
+        });
+      } else {
+        // Fallback to direct API call if LangCache is not available
+        console.warn('[Research] LangCache not available, using direct OpenAI API call');
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${openaiApiKey}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            max_tokens: 50,
+            temperature: 0.3
+          })
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.warn('[Research] OpenAI API call failed:', response.status, errorText);
+          console.log('[Research] Falling back to basic search term:', searchTerm);
+          return searchTerm;
+        }
+        
+        data = await response.json();
+      }
+      
+      if (!data || !data.choices?.[0]?.message?.content) {
+        console.warn('[Research] OpenAI API call failed or returned empty response');
         console.log('[Research] Falling back to basic search term:', searchTerm);
         return searchTerm;
       }
       
-      const data = await response.json();
       const generatedTerm = data.choices?.[0]?.message?.content?.trim();
       
       if (generatedTerm) {
