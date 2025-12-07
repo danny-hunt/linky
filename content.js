@@ -54,8 +54,33 @@ function extractRecipientInfo() {
   console.log("[Content] Extracting recipient information from LinkedIn chat interface");
 
   try {
+    // Find the message form first to scope our search to the current conversation
+    const messageForm = document.querySelector("form.msg-form, div.msg-form__contenteditable");
+    let conversationContainer = null;
+    
+    if (messageForm) {
+      // Find the conversation container by walking up the DOM tree
+      let container = messageForm;
+      for (let i = 0; i < 10 && container; i++) {
+        container = container.parentElement;
+        if (
+          container &&
+          (container.className?.includes("conversation") ||
+            container.className?.includes("message") ||
+            container.getAttribute("data-testid")?.includes("message") ||
+            container.getAttribute("data-testid")?.includes("conversation") ||
+            container.querySelector('div[class*="conversation-header"]') ||
+            container.querySelector('div[class*="message-header"]'))
+        ) {
+          conversationContainer = container;
+          break;
+        }
+      }
+    }
+    
     // LinkedIn chat header typically contains recipient info
     // Expanded selectors for recipient name in chat interface
+    // Prioritize selectors that are scoped to conversation headers
     const nameSelectors = [
       // Modern LinkedIn selectors
       "div.msg-s-message-list__name",
@@ -105,51 +130,116 @@ function extractRecipientInfo() {
 
     let name = null;
     let usedSelector = null;
-    for (const selector of nameSelectors) {
-      try {
-        const element = document.querySelector(selector);
-        if (element) {
-          // Try textContent first
-          let text = element.textContent?.trim();
+    
+    // First, try to find name within conversation container (more reliable)
+    if (conversationContainer) {
+      for (const selector of nameSelectors) {
+        try {
+          const element = conversationContainer.querySelector(selector);
+          if (element) {
+            // Verify element is visible
+            const rect = element.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              // Try textContent first
+              let text = element.textContent?.trim();
 
-          // If no text, try aria-label
-          if (!text || text.length === 0) {
-            text = element.getAttribute("aria-label")?.trim();
-          }
+              // If no text, try aria-label
+              if (!text || text.length === 0) {
+                text = element.getAttribute("aria-label")?.trim();
+              }
 
-          // If still no text, try title attribute
-          if (!text || text.length === 0) {
-            text = element.getAttribute("title")?.trim();
-          }
+              // If still no text, try title attribute
+              if (!text || text.length === 0) {
+                text = element.getAttribute("title")?.trim();
+              }
 
-          if (text && text.length > 0 && text.length < 100) {
-            // More lenient filtering - only exclude if it's clearly UI text
-            const lowerText = text.toLowerCase();
-            const isUIText =
-              lowerText === "linkedin" ||
-              lowerText === "messaging" ||
-              lowerText === "conversation" ||
-              lowerText === "new message" ||
-              lowerText === "search" ||
-              lowerText.startsWith("linkedin ") ||
-              lowerText.includes("linkedin messaging") ||
-              lowerText.includes("linkedin conversation");
+              if (text && text.length > 0 && text.length < 100) {
+                // More lenient filtering - only exclude if it's clearly UI text
+                const lowerText = text.toLowerCase();
+                const isUIText =
+                  lowerText === "linkedin" ||
+                  lowerText === "messaging" ||
+                  lowerText === "conversation" ||
+                  lowerText === "conversation list" ||
+                  lowerText === "new message" ||
+                  lowerText === "search" ||
+                  lowerText.startsWith("linkedin ") ||
+                  lowerText.includes("linkedin messaging") ||
+                  lowerText.includes("linkedin conversation");
 
-            // Also check if it looks like a name (contains letters, possibly spaces, not all caps unless short)
-            const looksLikeName =
-              /^[a-zA-Z\s\-'\.]+$/.test(text) && text.length >= 2 && (text.length <= 3 || text.toUpperCase() !== text); // Not all caps unless very short
+                // Also check if it looks like a name (contains letters, possibly spaces, not all caps unless short)
+                const looksLikeName =
+                  /^[a-zA-Z\s\-'\.]+$/.test(text) && text.length >= 2 && (text.length <= 3 || text.toUpperCase() !== text); // Not all caps unless very short
 
-            if (!isUIText && looksLikeName) {
-              name = text;
-              usedSelector = selector;
-              console.log("[Content] Found recipient name using selector:", selector, "=", name);
-              break;
+                if (!isUIText && looksLikeName) {
+                  name = text;
+                  usedSelector = selector;
+                  console.log("[Content] Found recipient name using selector (scoped):", selector, "=", name);
+                  break;
+                }
+              }
             }
           }
+        } catch (selectorError) {
+          // Continue to next selector if this one fails
+          continue;
         }
-      } catch (selectorError) {
-        // Continue to next selector if this one fails
-        continue;
+      }
+    }
+    
+    // If no name found in container, try document-wide search (fallback)
+    if (!name) {
+      for (const selector of nameSelectors) {
+        try {
+          const element = document.querySelector(selector);
+          if (element) {
+            // Verify element is visible
+            const rect = element.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              // Try textContent first
+              let text = element.textContent?.trim();
+
+              // If no text, try aria-label
+              if (!text || text.length === 0) {
+                text = element.getAttribute("aria-label")?.trim();
+              }
+
+              // If still no text, try title attribute
+              if (!text || text.length === 0) {
+                text = element.getAttribute("title")?.trim();
+              }
+
+              if (text && text.length > 0 && text.length < 100) {
+                // More lenient filtering - only exclude if it's clearly UI text
+                const lowerText = text.toLowerCase();
+                const isUIText =
+                  lowerText === "linkedin" ||
+                  lowerText === "messaging" ||
+                  lowerText === "conversation" ||
+                  lowerText === "conversation list" ||
+                  lowerText === "new message" ||
+                  lowerText === "search" ||
+                  lowerText.startsWith("linkedin ") ||
+                  lowerText.includes("linkedin messaging") ||
+                  lowerText.includes("linkedin conversation");
+
+                // Also check if it looks like a name (contains letters, possibly spaces, not all caps unless short)
+                const looksLikeName =
+                  /^[a-zA-Z\s\-'\.]+$/.test(text) && text.length >= 2 && (text.length <= 3 || text.toUpperCase() !== text); // Not all caps unless very short
+
+                if (!isUIText && looksLikeName) {
+                  name = text;
+                  usedSelector = selector;
+                  console.log("[Content] Found recipient name using selector:", selector, "=", name);
+                  break;
+                }
+              }
+            }
+          }
+        } catch (selectorError) {
+          // Continue to next selector if this one fails
+          continue;
+        }
       }
     }
 
@@ -180,24 +270,7 @@ function extractRecipientInfo() {
       );
 
       // Look for any visible h2/h1 near the message form
-      const messageForm = document.querySelector("form.msg-form, div.msg-form__contenteditable");
-      if (messageForm) {
-        // Try to find the conversation container - look up the DOM tree
-        let container = messageForm;
-        for (let i = 0; i < 10 && container; i++) {
-          container = container.parentElement;
-          if (
-            container &&
-            (container.className?.includes("conversation") ||
-              container.className?.includes("message") ||
-              container.getAttribute("data-testid")?.includes("message") ||
-              container.getAttribute("data-testid")?.includes("conversation"))
-          ) {
-            break;
-          }
-        }
-
-        if (container) {
+      if (messageForm && conversationContainer) {
           const headings = container.querySelectorAll(
             'h1, h2, h3, [class*="name"], [class*="title"], [class*="header"]'
           );
@@ -209,12 +282,13 @@ function extractRecipientInfo() {
               // More lenient filtering - only exclude if it's clearly UI text
               const lowerText = text.toLowerCase();
               if (
-                !lowerText.includes("linkedin") &&
-                !lowerText.includes("messaging") &&
-                !lowerText.includes("conversation") &&
-                !lowerText.includes("new message") &&
-                !lowerText.includes("search") &&
-                text.length > 1
+              !lowerText.includes("linkedin") &&
+              !lowerText.includes("messaging") &&
+              !lowerText.includes("conversation") &&
+              !lowerText.includes("conversation list") &&
+              !lowerText.includes("new message") &&
+              !lowerText.includes("search") &&
+              text.length > 1
               ) {
                 // At least 2 characters
                 name = text;
@@ -257,6 +331,7 @@ function extractRecipientInfo() {
     }
 
     // Common selectors for recipient byline (job title, company, location)
+    // Prioritize specific selectors and scope to conversation container if available
     const bylineSelectors = [
       "div.msg-s-message-list__byline",
       "span.msg-s-message-list__byline",
@@ -264,26 +339,98 @@ function extractRecipientInfo() {
       "div.msg-conversation-header__subtitle",
       "p.msg-conversation-header__subtitle",
       "span.msg-conversation-header__subtitle",
+    ];
+    
+    // Broader selectors (only use if we have a container to scope to)
+    const broadBylineSelectors = [
       'div[class*="byline"]',
-      'div[class*="subtitle"]',
       'span[class*="byline"]',
-      'span[class*="subtitle"]',
     ];
 
     let byline = null;
+    let usedBylineSelector = null;
+    
+    // First, try specific selectors scoped to conversation container
     for (const selector of bylineSelectors) {
       try {
-        const element = document.querySelector(selector);
+        const searchRoot = conversationContainer || document;
+        const element = searchRoot.querySelector(selector);
         if (element) {
-          const text = element.textContent?.trim();
-          if (text && text.length > 0) {
-            byline = text;
-            console.log("[Content] Found recipient byline using selector:", selector, "=", byline);
-            break;
+          // Verify element is visible and in the viewport
+          const rect = element.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            const text = element.textContent?.trim();
+            if (text && text.length > 0) {
+              // Additional validation: if we found a name, ensure byline is near it
+              if (name && usedSelector) {
+                try {
+                  const nameElement = document.querySelector(usedSelector);
+                  if (nameElement) {
+                    const nameRect = nameElement.getBoundingClientRect();
+                    const bylineRect = element.getBoundingClientRect();
+                    // Check if byline is near the name (within reasonable distance)
+                    const verticalDistance = Math.abs(bylineRect.top - nameRect.bottom);
+                    const horizontalOverlap = !(bylineRect.right < nameRect.left || bylineRect.left > nameRect.right);
+                    // If byline is too far from name (> 200px vertically), skip it
+                    if (verticalDistance > 200 && !horizontalOverlap) {
+                      console.log("[Content] Byline too far from name, skipping:", text);
+                      continue;
+                    }
+                  }
+                } catch (e) {
+                  // If validation fails, continue anyway
+                }
+              }
+              byline = text;
+              usedBylineSelector = selector;
+              console.log("[Content] Found recipient byline using selector:", selector, "=", byline);
+              break;
+            }
           }
         }
       } catch (selectorError) {
         continue;
+      }
+    }
+    
+    // If no byline found and we have a conversation container, try broader selectors within container
+    if (!byline && conversationContainer) {
+      for (const selector of broadBylineSelectors) {
+        try {
+          const element = conversationContainer.querySelector(selector);
+          if (element) {
+            const rect = element.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              const text = element.textContent?.trim();
+              if (text && text.length > 0) {
+                // Validate proximity to name if we found one
+                if (name && usedSelector) {
+                  try {
+                    const nameElement = document.querySelector(usedSelector);
+                    if (nameElement) {
+                      const nameRect = nameElement.getBoundingClientRect();
+                      const bylineRect = element.getBoundingClientRect();
+                      const verticalDistance = Math.abs(bylineRect.top - nameRect.bottom);
+                      const horizontalOverlap = !(bylineRect.right < nameRect.left || bylineRect.left > nameRect.right);
+                      if (verticalDistance > 200 && !horizontalOverlap) {
+                        console.log("[Content] Byline too far from name, skipping:", text);
+                        continue;
+                      }
+                    }
+                  } catch (e) {
+                    // Continue if validation fails
+                  }
+                }
+                byline = text;
+                usedBylineSelector = selector;
+                console.log("[Content] Found recipient byline using selector:", selector, "=", byline);
+                break;
+              }
+            }
+          }
+        } catch (selectorError) {
+          continue;
+        }
       }
     }
 
