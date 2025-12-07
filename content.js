@@ -931,10 +931,13 @@ async function callLangCache(
   temperature
 ) {
   // Construct the LangCache endpoint URL
-  // Based on Redis LangCache API docs, the endpoint is /chat/completions
-  // Remove trailing slash from URL if present
+  // Based on Redis LangCache API docs, the endpoint is /v1/chat/completions
+  // If the URL already includes /v1/ or /chat/completions, use it as-is
+  // Note: The endpoint construction is done in background.js, this is just for logging
   const baseUrl = langCacheUrl.replace(/\/$/, "");
-  const endpoint = `${baseUrl}/chat/completions`;
+  const endpoint = langCacheUrl.includes('/v1/chat/completions') || langCacheUrl.includes('/chat/completions')
+    ? langCacheUrl
+    : `${baseUrl}/v1/chat/completions`;
 
   console.log("[Content] Calling Redis LangCache for semantic caching via background script", {
     endpoint,
