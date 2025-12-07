@@ -68,10 +68,7 @@ function normalizeName(name) {
   if (!name || typeof name !== "string") {
     return "";
   }
-  return name
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, " ");
+  return name.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
 /**
@@ -86,29 +83,30 @@ function isUserName(name, userName) {
   }
   const normalizedName = normalizeName(name);
   const normalizedUserName = normalizeName(userName);
-  
+
   // Exact match
   if (normalizedName === normalizedUserName) {
     return true;
   }
-  
+
   // Check if name contains user's name or vice versa (for cases like "John Doe" vs "John")
   const nameParts = normalizedName.split(" ");
   const userNameParts = normalizedUserName.split(" ");
-  
+
   // If either name is a substring of the other (for full name matches)
   if (normalizedName.includes(normalizedUserName) || normalizedUserName.includes(normalizedName)) {
     // But only if they're not just common words
     if (nameParts.length > 0 && userNameParts.length > 0) {
       // Check if at least one part matches exactly
-      const hasMatchingPart = nameParts.some(part => userNameParts.includes(part)) ||
-                             userNameParts.some(part => nameParts.includes(part));
+      const hasMatchingPart =
+        nameParts.some((part) => userNameParts.includes(part)) ||
+        userNameParts.some((part) => nameParts.includes(part));
       if (hasMatchingPart && nameParts.length === userNameParts.length) {
         return true;
       }
     }
   }
-  
+
   return false;
 }
 
@@ -122,9 +120,9 @@ function findAlternativeRecipientName(conversationContainer, userName) {
   if (!conversationContainer || !userName) {
     return null;
   }
-  
+
   const foundNames = new Set();
-  
+
   // Strategy 1: Look for names in message sender elements
   const messageSelectors = [
     "div.msg-s-message-list__item",
@@ -132,11 +130,11 @@ function findAlternativeRecipientName(conversationContainer, userName) {
     'div[data-testid="message-item"]',
     "div.msg-s-message-list__message",
   ];
-  
-  messageSelectors.forEach(selector => {
+
+  messageSelectors.forEach((selector) => {
     try {
       const messages = conversationContainer.querySelectorAll(selector);
-      messages.forEach(msg => {
+      messages.forEach((msg) => {
         // Look for sender name elements
         const senderSelectors = [
           "span.msg-s-message-list__name",
@@ -148,8 +146,8 @@ function findAlternativeRecipientName(conversationContainer, userName) {
           'span[class*="participant"]',
           'div[class*="participant"]',
         ];
-        
-        senderSelectors.forEach(senderSelector => {
+
+        senderSelectors.forEach((senderSelector) => {
           const senderElement = msg.querySelector(senderSelector);
           if (senderElement) {
             const text = senderElement.textContent?.trim();
@@ -161,7 +159,7 @@ function findAlternativeRecipientName(conversationContainer, userName) {
                 lowerText === "conversation" ||
                 lowerText === "you" ||
                 lowerText.startsWith("linkedin ");
-              
+
               if (!isUIText && /^[a-zA-Z\s\-'\.]+$/.test(text)) {
                 foundNames.add(text);
               }
@@ -173,11 +171,11 @@ function findAlternativeRecipientName(conversationContainer, userName) {
       // Continue if selector fails
     }
   });
-  
+
   // Strategy 2: Look for all headings in the conversation container that might be names
   try {
     const headings = conversationContainer.querySelectorAll("h1, h2, h3, h4, h5, h6");
-    headings.forEach(heading => {
+    headings.forEach((heading) => {
       const text = heading.textContent?.trim();
       if (text && text.length > 1 && text.length < 100) {
         const lowerText = text.toLowerCase();
@@ -187,7 +185,7 @@ function findAlternativeRecipientName(conversationContainer, userName) {
           lowerText === "conversation" ||
           lowerText === "you" ||
           lowerText.startsWith("linkedin ");
-        
+
         if (!isUIText && /^[a-zA-Z\s\-'\.]+$/.test(text)) {
           foundNames.add(text);
         }
@@ -196,13 +194,13 @@ function findAlternativeRecipientName(conversationContainer, userName) {
   } catch (e) {
     // Continue if this fails
   }
-  
+
   // Strategy 3: Look for profile card names
   try {
     const profileCards = conversationContainer.querySelectorAll("div.msg-s-profile-card, div[class*='profile-card']");
-    profileCards.forEach(card => {
+    profileCards.forEach((card) => {
       const nameElements = card.querySelectorAll("h1, h2, h3, span[class*='name'], div[class*='name']");
-      nameElements.forEach(nameEl => {
+      nameElements.forEach((nameEl) => {
         const text = nameEl.textContent?.trim();
         if (text && text.length > 1 && text.length < 100) {
           const lowerText = text.toLowerCase();
@@ -212,7 +210,7 @@ function findAlternativeRecipientName(conversationContainer, userName) {
             lowerText === "conversation" ||
             lowerText === "you" ||
             lowerText.startsWith("linkedin ");
-          
+
           if (!isUIText && /^[a-zA-Z\s\-'\.]+$/.test(text)) {
             foundNames.add(text);
           }
@@ -222,7 +220,7 @@ function findAlternativeRecipientName(conversationContainer, userName) {
   } catch (e) {
     // Continue if this fails
   }
-  
+
   // Filter out the user's name and return the first alternative
   for (const foundName of foundNames) {
     if (!isUserName(foundName, userName)) {
@@ -230,7 +228,7 @@ function findAlternativeRecipientName(conversationContainer, userName) {
       return foundName;
     }
   }
-  
+
   console.log("[Content] Could not find alternative recipient name in conversation");
   return null;
 }
@@ -546,7 +544,7 @@ async function extractRecipientInfo() {
 
     // Broader selectors (only use if we have a container to scope to)
     const broadBylineSelectors = [
-      'div[class*="byline"]', 
+      'div[class*="byline"]',
       'span[class*="byline"]',
       'div[class*="subtitle"]',
       'span[class*="subtitle"]',
@@ -566,12 +564,12 @@ async function extractRecipientInfo() {
           if (rect.width > 0 && rect.height > 0) {
             // Try textContent first
             let text = element.textContent?.trim();
-            
+
             // If no text, try title attribute (common in LinkedIn components)
             if (!text || text.length === 0) {
               text = element.getAttribute("title")?.trim();
             }
-            
+
             // If still no text, check nested divs (some components nest the text)
             if (!text || text.length === 0) {
               const nestedDiv = element.querySelector("div");
@@ -579,7 +577,7 @@ async function extractRecipientInfo() {
                 text = nestedDiv.textContent?.trim() || nestedDiv.getAttribute("title")?.trim();
               }
             }
-            
+
             if (text && text.length > 0) {
               // Additional validation: if we found a name, ensure byline is near it
               if (name && usedSelector) {
@@ -623,12 +621,12 @@ async function extractRecipientInfo() {
             if (rect.width > 0 && rect.height > 0) {
               // Try textContent first
               let text = element.textContent?.trim();
-              
+
               // If no text, try title attribute
               if (!text || text.length === 0) {
                 text = element.getAttribute("title")?.trim();
               }
-              
+
               // If still no text, check nested divs
               if (!text || text.length === 0) {
                 const nestedDiv = element.querySelector("div");
@@ -636,7 +634,7 @@ async function extractRecipientInfo() {
                   text = nestedDiv.textContent?.trim() || nestedDiv.getAttribute("title")?.trim();
                 }
               }
-              
+
               if (text && text.length > 0) {
                 // Validate proximity to name if we found one
                 if (name && usedSelector) {
@@ -676,7 +674,7 @@ async function extractRecipientInfo() {
         const searchRoot = conversationContainer || document;
         // Look for profile card components
         const profileCards = searchRoot.querySelectorAll("div.msg-s-profile-card");
-        
+
         for (const profileCard of profileCards) {
           // Look for subtitle within the profile card
           const subtitleElement = profileCard.querySelector("div.artdeco-entity-lockup__subtitle");
@@ -685,12 +683,12 @@ async function extractRecipientInfo() {
             if (rect.width > 0 && rect.height > 0) {
               // Try textContent first
               let text = subtitleElement.textContent?.trim();
-              
+
               // If no text, try title attribute
               if (!text || text.length === 0) {
                 text = subtitleElement.getAttribute("title")?.trim();
               }
-              
+
               // If still no text, check nested divs
               if (!text || text.length === 0) {
                 const nestedDiv = subtitleElement.querySelector("div");
@@ -698,7 +696,7 @@ async function extractRecipientInfo() {
                   text = nestedDiv.textContent?.trim() || nestedDiv.getAttribute("title")?.trim();
                 }
               }
-              
+
               if (text && text.length > 0) {
                 // Validate proximity to name if we found one
                 if (name && usedSelector) {
@@ -740,20 +738,28 @@ async function extractRecipientInfo() {
       if (!currentUserName) {
         // Get from storage if not in variable
         try {
-          const result = await chrome.storage.sync.get(["userName"]);
+          const result = await new Promise((resolve, reject) => {
+            chrome.storage.sync.get(["userName"], (res) => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+              }
+              resolve(res);
+            });
+          });
           currentUserName = result.userName || "";
         } catch (e) {
           console.log("[Content] Could not get userName from storage:", e);
         }
       }
-      
+
       // Check if the extracted name matches the user's name
       if (currentUserName && isUserName(name, currentUserName)) {
         console.log("[Content] Extracted name matches user's name, looking for alternative recipient name");
-        
+
         // Try to find an alternative name in the conversation
         const alternativeName = findAlternativeRecipientName(conversationContainer, currentUserName);
-        
+
         if (alternativeName) {
           name = alternativeName;
           console.log("[Content] Using alternative recipient name:", name);
@@ -764,7 +770,7 @@ async function extractRecipientInfo() {
           return null;
         }
       }
-      
+
       const recipientInfo = {
         name,
         byline: byline || null,
@@ -1206,9 +1212,10 @@ async function callLangCache(
   // If the URL already includes /v1/ or /chat/completions, use it as-is
   // Note: The endpoint construction is done in background.js, this is just for logging
   const baseUrl = langCacheUrl.replace(/\/$/, "");
-  const endpoint = langCacheUrl.includes('/v1/chat/completions') || langCacheUrl.includes('/chat/completions')
-    ? langCacheUrl
-    : `${baseUrl}/v1/chat/completions`;
+  const endpoint =
+    langCacheUrl.includes("/v1/chat/completions") || langCacheUrl.includes("/chat/completions")
+      ? langCacheUrl
+      : `${baseUrl}/v1/chat/completions`;
 
   console.log("[Content] Calling Redis LangCache for semantic caching via background script", {
     endpoint,
@@ -1755,7 +1762,13 @@ async function addCategoryTagToConversation(recipientInfo, category, retryCount 
     }
 
     if (!headerElement) {
-      console.log("[Content] Could not find conversation header, will retry later (attempt " + (retryCount + 1) + "/" + MAX_RETRIES + ")");
+      console.log(
+        "[Content] Could not find conversation header, will retry later (attempt " +
+          (retryCount + 1) +
+          "/" +
+          MAX_RETRIES +
+          ")"
+      );
       // Retry with exponential backoff: 3s, 5s, 8s
       const delays = [3000, 5000, 8000];
       const delay = delays[retryCount] || 8000;
@@ -1793,7 +1806,7 @@ async function addCategoryTagToConversation(recipientInfo, category, retryCount 
     // Try to find the name element within the header
     const nameSelectors = ["h1", "h2", "h3", "span.msg-s-message-list__name", "div.msg-s-message-list__name"];
     let nameElement = null;
-    
+
     for (const selector of nameSelectors) {
       const element = headerElement.querySelector(selector);
       if (element && element.textContent && element.textContent.trim().length > 0) {
@@ -1801,7 +1814,7 @@ async function addCategoryTagToConversation(recipientInfo, category, retryCount 
         break;
       }
     }
-    
+
     // If we found a name element, insert after it
     if (nameElement && nameElement.parentNode) {
       // Insert after the name element
@@ -1836,7 +1849,7 @@ async function loadConversationCategoryTag() {
 
     // Wait a bit for the page to be ready
     await new Promise((resolve) => setTimeout(resolve, 500));
-    
+
     // Extract recipient info
     const recipientInfo = await extractRecipientInfo();
     if (!recipientInfo?.name) {
@@ -2084,7 +2097,7 @@ async function generateAndInsertMessage(inputElement) {
 
     // Step 6: Get user preferences for this category
     const categoryKey = category.toLowerCase().replace(/\s+/g, "_");
-    
+
     // Check extension context before accessing storage
     let result;
     if (!isExtensionContextValid()) {
@@ -2106,7 +2119,7 @@ async function generateAndInsertMessage(inputElement) {
         result = {};
       }
     }
-    
+
     const allPreferences = result.categoryPreferences || {};
     const userPreferences = allPreferences[categoryKey] || {
       tone: "professional",
