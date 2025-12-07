@@ -46,11 +46,187 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 /**
+ * Normalizes a name for comparison (lowercase, trim, remove extra spaces)
+ * @param {string} name - The name to normalize
+ * @returns {string} - Normalized name
+ */
+function normalizeName(name) {
+  if (!name || typeof name !== "string") {
+    return "";
+  }
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Checks if a name matches the user's name from preferences
+ * @param {string} name - The name to check
+ * @param {string} userName - The user's name from preferences
+ * @returns {boolean} - True if the name matches the user's name
+ */
+function isUserName(name, userName) {
+  if (!name || !userName) {
+    return false;
+  }
+  const normalizedName = normalizeName(name);
+  const normalizedUserName = normalizeName(userName);
+  
+  // Exact match
+  if (normalizedName === normalizedUserName) {
+    return true;
+  }
+  
+  // Check if name contains user's name or vice versa (for cases like "John Doe" vs "John")
+  const nameParts = normalizedName.split(" ");
+  const userNameParts = normalizedUserName.split(" ");
+  
+  // If either name is a substring of the other (for full name matches)
+  if (normalizedName.includes(normalizedUserName) || normalizedUserName.includes(normalizedName)) {
+    // But only if they're not just common words
+    if (nameParts.length > 0 && userNameParts.length > 0) {
+      // Check if at least one part matches exactly
+      const hasMatchingPart = nameParts.some(part => userNameParts.includes(part)) ||
+                             userNameParts.some(part => nameParts.includes(part));
+      if (hasMatchingPart && nameParts.length === userNameParts.length) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Finds alternative names in the conversation that are not the user's name
+ * @param {HTMLElement} conversationContainer - The conversation container element
+ * @param {string} userName - The user's name to exclude
+ * @returns {string|null} - An alternative name or null if not found
+ */
+function findAlternativeRecipientName(conversationContainer, userName) {
+  if (!conversationContainer || !userName) {
+    return null;
+  }
+  
+  const foundNames = new Set();
+  
+  // Strategy 1: Look for names in message sender elements
+  const messageSelectors = [
+    "div.msg-s-message-list__item",
+    "li.msg-s-message-list__item",
+    'div[data-testid="message-item"]',
+    "div.msg-s-message-list__message",
+  ];
+  
+  messageSelectors.forEach(selector => {
+    try {
+      const messages = conversationContainer.querySelectorAll(selector);
+      messages.forEach(msg => {
+        // Look for sender name elements
+        const senderSelectors = [
+          "span.msg-s-message-list__name",
+          "div.msg-s-message-list__name",
+          'span[data-testid*="sender"]',
+          'div[data-testid*="sender"]',
+          'span[class*="sender"]',
+          'div[class*="sender"]',
+          'span[class*="participant"]',
+          'div[class*="participant"]',
+        ];
+        
+        senderSelectors.forEach(senderSelector => {
+          const senderElement = msg.querySelector(senderSelector);
+          if (senderElement) {
+            const text = senderElement.textContent?.trim();
+            if (text && text.length > 0 && text.length < 100) {
+              const lowerText = text.toLowerCase();
+              const isUIText =
+                lowerText === "linkedin" ||
+                lowerText === "messaging" ||
+                lowerText === "conversation" ||
+                lowerText === "you" ||
+                lowerText.startsWith("linkedin ");
+              
+              if (!isUIText && /^[a-zA-Z\s\-'\.]+$/.test(text)) {
+                foundNames.add(text);
+              }
+            }
+          }
+        });
+      });
+    } catch (e) {
+      // Continue if selector fails
+    }
+  });
+  
+  // Strategy 2: Look for all headings in the conversation container that might be names
+  try {
+    const headings = conversationContainer.querySelectorAll("h1, h2, h3, h4, h5, h6");
+    headings.forEach(heading => {
+      const text = heading.textContent?.trim();
+      if (text && text.length > 1 && text.length < 100) {
+        const lowerText = text.toLowerCase();
+        const isUIText =
+          lowerText === "linkedin" ||
+          lowerText === "messaging" ||
+          lowerText === "conversation" ||
+          lowerText === "you" ||
+          lowerText.startsWith("linkedin ");
+        
+        if (!isUIText && /^[a-zA-Z\s\-'\.]+$/.test(text)) {
+          foundNames.add(text);
+        }
+      }
+    });
+  } catch (e) {
+    // Continue if this fails
+  }
+  
+  // Strategy 3: Look for profile card names
+  try {
+    const profileCards = conversationContainer.querySelectorAll("div.msg-s-profile-card, div[class*='profile-card']");
+    profileCards.forEach(card => {
+      const nameElements = card.querySelectorAll("h1, h2, h3, span[class*='name'], div[class*='name']");
+      nameElements.forEach(nameEl => {
+        const text = nameEl.textContent?.trim();
+        if (text && text.length > 1 && text.length < 100) {
+          const lowerText = text.toLowerCase();
+          const isUIText =
+            lowerText === "linkedin" ||
+            lowerText === "messaging" ||
+            lowerText === "conversation" ||
+            lowerText === "you" ||
+            lowerText.startsWith("linkedin ");
+          
+          if (!isUIText && /^[a-zA-Z\s\-'\.]+$/.test(text)) {
+            foundNames.add(text);
+          }
+        }
+      });
+    });
+  } catch (e) {
+    // Continue if this fails
+  }
+  
+  // Filter out the user's name and return the first alternative
+  for (const foundName of foundNames) {
+    if (!isUserName(foundName, userName)) {
+      console.log("[Content] Found alternative recipient name:", foundName);
+      return foundName;
+    }
+  }
+  
+  console.log("[Content] Could not find alternative recipient name in conversation");
+  return null;
+}
+
+/**
  * Extracts recipient information from LinkedIn chat interface
  * Based on PRD.md: Extracts visible profile data (name, job title, company, etc.)
- * @returns {Object|null} - Object with name and byline, or null if not found
+ * @returns {Promise<Object|null>} - Promise that resolves to object with name and byline, or null if not found
  */
-function extractRecipientInfo() {
+async function extractRecipientInfo() {
   console.log("[Content] Extracting recipient information from LinkedIn chat interface");
 
   try {
@@ -542,8 +718,39 @@ function extractRecipientInfo() {
       }
     }
 
-    // If we found at least a name, return the info
+    // If we found at least a name, check if it's the user's name
     if (name) {
+      // Get user's name from storage to compare
+      // Check both the module-level variable and storage
+      let currentUserName = userName;
+      if (!currentUserName) {
+        // Get from storage if not in variable
+        try {
+          const result = await chrome.storage.sync.get(["userName"]);
+          currentUserName = result.userName || "";
+        } catch (e) {
+          console.log("[Content] Could not get userName from storage:", e);
+        }
+      }
+      
+      // Check if the extracted name matches the user's name
+      if (currentUserName && isUserName(name, currentUserName)) {
+        console.log("[Content] Extracted name matches user's name, looking for alternative recipient name");
+        
+        // Try to find an alternative name in the conversation
+        const alternativeName = findAlternativeRecipientName(conversationContainer, currentUserName);
+        
+        if (alternativeName) {
+          name = alternativeName;
+          console.log("[Content] Using alternative recipient name:", name);
+        } else {
+          // If we can't find an alternative, log a warning and return null
+          // The active user should never be the intended message recipient
+          console.warn("[Content] Only found user's own name in conversation. Cannot determine recipient.");
+          return null;
+        }
+      }
+      
       const recipientInfo = {
         name,
         byline: byline || null,
@@ -1205,7 +1412,7 @@ async function performRecipientResearch() {
   console.log("[Content] Starting recipient research process");
 
   // Extract recipient information from the page
-  const recipientInfo = extractRecipientInfo();
+  const recipientInfo = await extractRecipientInfo();
 
   if (!recipientInfo) {
     console.log("[Content] No recipient info available, skipping research");
@@ -1494,11 +1701,11 @@ async function loadConversationCategoryTag() {
     await new Promise((resolve) => setTimeout(resolve, 500));
     
     // Extract recipient info
-    const recipientInfo = extractRecipientInfo();
+    const recipientInfo = await extractRecipientInfo();
     if (!recipientInfo?.name) {
       // Retry once if recipient info not found
       setTimeout(async () => {
-        const retryRecipientInfo = extractRecipientInfo();
+        const retryRecipientInfo = await extractRecipientInfo();
         if (retryRecipientInfo?.name) {
           const result = await chrome.storage.local.get(["conversationCategories"]);
           const categories = result.conversationCategories || {};
@@ -1627,20 +1834,20 @@ async function generateAndInsertMessage(inputElement) {
     console.log("[Content] Starting message generation flow");
 
     // Step 1: Extract recipient information (with retry)
-    let recipientInfo = extractRecipientInfo();
+    let recipientInfo = await extractRecipientInfo();
 
     // If extraction failed, wait a bit and retry (page might still be loading)
     if (!recipientInfo) {
       console.log("[Content] Initial extraction failed, waiting 1s and retrying...");
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      recipientInfo = extractRecipientInfo();
+      recipientInfo = await extractRecipientInfo();
     }
 
     // Final retry after another delay
     if (!recipientInfo) {
       console.log("[Content] Second extraction attempt failed, waiting 2s and retrying one more time...");
       await new Promise((resolve) => setTimeout(resolve, 2000));
-      recipientInfo = extractRecipientInfo();
+      recipientInfo = await extractRecipientInfo();
     }
 
     if (!recipientInfo) {
