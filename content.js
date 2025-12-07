@@ -668,10 +668,10 @@ async function categorizeInteraction(chatHistoryInfo, recipientInfo) {
  */
 async function callLangCache(langCacheUrl, langCacheApiKey, langCacheId, openaiApiKey, messages, model, maxTokens, temperature) {
   // Construct the LangCache endpoint URL
-  // Based on Redis LangCache API docs, the endpoint is typically /cache/chat/completions
+  // Based on Redis LangCache API docs, the endpoint is /chat/completions
   // Remove trailing slash from URL if present
   const baseUrl = langCacheUrl.replace(/\/$/, "");
-  const endpoint = `${baseUrl}/cache/chat/completions`;
+  const endpoint = `${baseUrl}/chat/completions`;
   
   console.log("[Content] Calling Redis LangCache for semantic caching via background script", { endpoint, langCacheId });
 

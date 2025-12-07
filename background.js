@@ -27,8 +27,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const { langCacheUrl, langCacheApiKey, langCacheId, openaiApiKey, messages, model, maxTokens, temperature } = request;
     
     // Construct the LangCache endpoint URL
+    // Redis LangCache API uses /chat/completions as the endpoint
     const baseUrl = langCacheUrl.replace(/\/$/, "");
-    const endpoint = `${baseUrl}/cache/chat/completions`;
+    const endpoint = `${baseUrl}/chat/completions`;
     
     console.log("[Background] Proxying LangCache API call", { endpoint, langCacheId });
     
