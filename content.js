@@ -225,11 +225,14 @@ function extractRecipientInfo() {
       'div.msg-conversation-header__title h2',
       'div.msg-conversation-header__title span',
       'div.msg-conversation-header__title',
+      'div.msg-conversation-header__title h1',
       // Alternative header selectors
       'header.msg-conversation-header h2',
       'header.msg-conversation-header span',
+      'header.msg-conversation-header h1',
       'div[class*="conversation-header"] h2',
       'div[class*="conversation-header"] span',
+      'div[class*="conversation-header"] h1',
       // Profile name in message list area
       'div[class*="message-list"] h2',
       'div[class*="message-list"] h1',
@@ -241,7 +244,21 @@ function extractRecipientInfo() {
       '[aria-label*="conversation"] h1',
       // Try finding by proximity to message form
       'form.msg-form ~ * h2',
-      'form.msg-form ~ * h1'
+      'form.msg-form ~ * h1',
+      // Look for elements with aria-label that might contain the name
+      '[aria-label]:not([aria-label*="button"]):not([aria-label*="link"])',
+      // Look for data attributes
+      '[data-testid*="name"]',
+      '[data-testid*="header"]',
+      // Look in specific LinkedIn containers
+      'div[class*="msg-s-message-list"] h2',
+      'div[class*="msg-s-message-list"] h1',
+      'div[class*="msg-s-message-list"] span[class*="name"]',
+      // Try to find the main heading in the conversation view
+      'main h2',
+      'main h1',
+      '[role="main"] h2',
+      '[role="main"] h1'
     ];
     
     let name = null;
@@ -250,17 +267,42 @@ function extractRecipientInfo() {
       try {
         const element = document.querySelector(selector);
         if (element) {
-          const text = element.textContent?.trim();
-          // Filter out empty strings and common UI text
-          if (text && text.length > 0 && 
-              !text.toLowerCase().includes('linkedin') &&
-              !text.toLowerCase().includes('message') &&
-              !text.toLowerCase().includes('conversation') &&
-              text.length < 100) { // Reasonable name length
-            name = text;
-            usedSelector = selector;
-            console.log('[Content] Found recipient name using selector:', selector, '=', name);
-            break;
+          // Try textContent first
+          let text = element.textContent?.trim();
+          
+          // If no text, try aria-label
+          if (!text || text.length === 0) {
+            text = element.getAttribute('aria-label')?.trim();
+          }
+          
+          // If still no text, try title attribute
+          if (!text || text.length === 0) {
+            text = element.getAttribute('title')?.trim();
+          }
+          
+          if (text && text.length > 0 && text.length < 100) {
+            // More lenient filtering - only exclude if it's clearly UI text
+            const lowerText = text.toLowerCase();
+            const isUIText = lowerText === 'linkedin' ||
+                            lowerText === 'messaging' ||
+                            lowerText === 'conversation' ||
+                            lowerText === 'new message' ||
+                            lowerText === 'search' ||
+                            lowerText.startsWith('linkedin ') ||
+                            lowerText.includes('linkedin messaging') ||
+                            lowerText.includes('linkedin conversation');
+            
+            // Also check if it looks like a name (contains letters, possibly spaces, not all caps unless short)
+            const looksLikeName = /^[a-zA-Z\s\-'\.]+$/.test(text) && 
+                                  text.length >= 2 &&
+                                  (text.length <= 3 || text.toUpperCase() !== text); // Not all caps unless very short
+            
+            if (!isUIText && looksLikeName) {
+              name = text;
+              usedSelector = selector;
+              console.log('[Content] Found recipient name using selector:', selector, '=', name);
+              break;
+            }
           }
         }
       } catch (selectorError) {
@@ -272,22 +314,86 @@ function extractRecipientInfo() {
     // If still no name, try a more aggressive search
     if (!name) {
       console.log('[Content] Standard selectors failed, trying broader search');
+      
+      // First, try to find all h1/h2 elements and log their content for debugging
+      const allH2s = Array.from(document.querySelectorAll('h2'));
+      const allH1s = Array.from(document.querySelectorAll('h1'));
+      console.log('[Content] All h2 elements found:', allH2s.map(h => ({
+        text: h.textContent?.trim(),
+        classes: h.className,
+        id: h.id,
+        parent: h.parentElement?.className
+      })));
+      console.log('[Content] All h1 elements found:', allH1s.map(h => ({
+        text: h.textContent?.trim(),
+        classes: h.className,
+        id: h.id,
+        parent: h.parentElement?.className
+      })));
+      
       // Look for any visible h2/h1 near the message form
       const messageForm = document.querySelector('form.msg-form, div.msg-form__contenteditable');
       if (messageForm) {
-        const header = messageForm.closest('div[class*="conversation"], div[class*="message"]');
-        if (header) {
-          const headings = header.querySelectorAll('h1, h2, h3, [class*="name"], [class*="title"]');
+        // Try to find the conversation container - look up the DOM tree
+        let container = messageForm;
+        for (let i = 0; i < 10 && container; i++) {
+          container = container.parentElement;
+          if (container && (
+            container.className?.includes('conversation') ||
+            container.className?.includes('message') ||
+            container.getAttribute('data-testid')?.includes('message') ||
+            container.getAttribute('data-testid')?.includes('conversation')
+          )) {
+            break;
+          }
+        }
+        
+        if (container) {
+          const headings = container.querySelectorAll('h1, h2, h3, [class*="name"], [class*="title"], [class*="header"]');
+          console.log('[Content] Found headings in container:', headings.length);
           for (const heading of headings) {
             const text = heading.textContent?.trim();
-            if (text && text.length > 0 && text.length < 100 &&
-                !text.toLowerCase().includes('linkedin') &&
-                !text.toLowerCase().includes('message') &&
-                !text.toLowerCase().includes('conversation')) {
-              name = text;
-              usedSelector = 'broad-search';
-              console.log('[Content] Found recipient name via broad search:', name);
-              break;
+            console.log('[Content] Checking heading:', { text, classes: heading.className });
+            if (text && text.length > 0 && text.length < 100) {
+              // More lenient filtering - only exclude if it's clearly UI text
+              const lowerText = text.toLowerCase();
+              if (!lowerText.includes('linkedin') &&
+                  !lowerText.includes('messaging') &&
+                  !lowerText.includes('conversation') &&
+                  !lowerText.includes('new message') &&
+                  !lowerText.includes('search') &&
+                  text.length > 1) { // At least 2 characters
+                name = text;
+                usedSelector = 'broad-search';
+                console.log('[Content] Found recipient name via broad search:', name);
+                break;
+              }
+            }
+          }
+        }
+        
+        // If still no name, try searching the entire visible area above the message form
+        if (!name) {
+          // Get all headings in the viewport
+          const allHeadings = document.querySelectorAll('h1, h2');
+          for (const heading of allHeadings) {
+            // Check if heading is visible and above the message form
+            const rect = heading.getBoundingClientRect();
+            const formRect = messageForm.getBoundingClientRect();
+            if (rect.bottom < formRect.top && rect.width > 0 && rect.height > 0) {
+              const text = heading.textContent?.trim();
+              if (text && text.length > 1 && text.length < 100) {
+                const lowerText = text.toLowerCase();
+                // Very lenient - just exclude obvious UI elements
+                if (!lowerText.match(/^(linkedin|messaging|conversation|new message|search|filter)$/i) &&
+                    !lowerText.startsWith('linkedin') &&
+                    text.length > 1) {
+                  name = text;
+                  usedSelector = 'viewport-search';
+                  console.log('[Content] Found recipient name via viewport search:', name);
+                  break;
+                }
+              }
             }
           }
         }
@@ -337,11 +443,51 @@ function extractRecipientInfo() {
       // Enhanced debugging: log what we found
       console.warn('[Content] Could not extract recipient information - no name found');
       console.log('[Content] Debug info:');
-      console.log('  - Message form found:', !!document.querySelector('form.msg-form, div.msg-form__contenteditable'));
+      const messageForm = document.querySelector('form.msg-form, div.msg-form__contenteditable');
+      console.log('  - Message form found:', !!messageForm);
       console.log('  - Conversation header found:', !!document.querySelector('div[class*="conversation-header"]'));
       console.log('  - Message list found:', !!document.querySelector('div[class*="message-list"]'));
-      console.log('  - All h2 elements:', Array.from(document.querySelectorAll('h2')).map(h => h.textContent?.trim()).filter(Boolean));
-      console.log('  - All h1 elements:', Array.from(document.querySelectorAll('h1')).map(h => h.textContent?.trim()).filter(Boolean));
+      
+      const h2Elements = Array.from(document.querySelectorAll('h2'));
+      const h1Elements = Array.from(document.querySelectorAll('h1'));
+      console.log('  - All h2 elements:', h2Elements.map(h => ({
+        text: h.textContent?.trim(),
+        classes: h.className,
+        visible: h.offsetParent !== null,
+        rect: h.getBoundingClientRect()
+      })));
+      console.log('  - All h1 elements:', h1Elements.map(h => ({
+        text: h.textContent?.trim(),
+        classes: h.className,
+        visible: h.offsetParent !== null,
+        rect: h.getBoundingClientRect()
+      })));
+      
+      // Try to find any text that looks like a name near the message form
+      if (messageForm) {
+        const formRect = messageForm.getBoundingClientRect();
+        const candidates = [];
+        h2Elements.forEach(h => {
+          const rect = h.getBoundingClientRect();
+          if (rect.bottom < formRect.top && rect.width > 0 && rect.height > 0) {
+            const text = h.textContent?.trim();
+            if (text && text.length > 1 && text.length < 100) {
+              candidates.push({ element: 'h2', text, rect });
+            }
+          }
+        });
+        h1Elements.forEach(h => {
+          const rect = h.getBoundingClientRect();
+          if (rect.bottom < formRect.top && rect.width > 0 && rect.height > 0) {
+            const text = h.textContent?.trim();
+            if (text && text.length > 1 && text.length < 100) {
+              candidates.push({ element: 'h1', text, rect });
+            }
+          }
+        });
+        console.log('  - Candidate names above message form:', candidates);
+      }
+      
       return null;
     }
   } catch (error) {
