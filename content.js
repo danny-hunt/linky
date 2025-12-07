@@ -791,6 +791,11 @@ async function generateMessageDraft(context) {
         }\n- Formality: ${userPreferences.formalityLevel || "moderate"}`
       : "Use professional, medium-length, moderate formality.";
 
+    // Include custom instructions if they exist and are not empty
+    const customInstructionsContext = userPreferences?.customInstructions?.trim()
+      ? `\n\nCustom Instructions for this category:\n${userPreferences.customInstructions.trim()}`
+      : "";
+
     const systemPrompt = `You are a LinkedIn message draft generator. Generate a personalized, contextually appropriate LinkedIn message draft based on the provided information. 
 
 CRITICAL: The LAST MESSAGE in the conversation history is the MOST IMPORTANT. Your generated message must be a direct response to the last message. Read the last message carefully and respond to its specific content, questions, or requests. Do NOT generate a generic message that ignores the last message.
@@ -807,7 +812,7 @@ ${researchContext}
 
 Interaction Category: ${category}
 
-${preferencesContext}
+${preferencesContext}${customInstructionsContext}
 
 ${userName ? `Your name: ${userName}` : ""}
 
