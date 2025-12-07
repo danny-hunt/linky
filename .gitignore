@@ -1,0 +1,7 @@
+# Secrets and API keys - DO NOT COMMIT
+secrets.js
+
+# Common development files
+.DS_Store
+*.log
+node_modules/

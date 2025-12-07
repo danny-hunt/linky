@@ -92,10 +92,20 @@ async function generateSearchTerm(recipientInfo) {
 }
 
 /**
- * Retrieves OpenAI API key from Chrome storage
+ * Retrieves OpenAI API key
+ * Priority: 1. secrets.js (local hardcoded), 2. Chrome storage
  * @returns {Promise<string|null>} - API key or null if not found
  */
 async function getOpenAIApiKey() {
+  // First, check for hardcoded key in secrets.js (loaded before this script)
+  // This allows local hardcoding for demo without committing to git
+  if (typeof self !== 'undefined' && self.OPENAI_API_KEY && self.OPENAI_API_KEY !== 'your-openai-api-key-here') {
+    return self.OPENAI_API_KEY;
+  } else if (typeof window !== 'undefined' && window.OPENAI_API_KEY && window.OPENAI_API_KEY !== 'your-openai-api-key-here') {
+    return window.OPENAI_API_KEY;
+  }
+  
+  // Fallback to Chrome storage
   return new Promise((resolve) => {
     chrome.storage.sync.get(['openaiApiKey'], (result) => {
       resolve(result.openaiApiKey || null);
@@ -174,10 +184,38 @@ async function performGoogleSearch(searchTerm) {
 }
 
 /**
- * Retrieves Google API credentials from Chrome storage
+ * Retrieves Google API credentials
+ * Priority: 1. secrets.js (local hardcoded), 2. Chrome storage
  * @returns {Promise<Object>} - Object with googleApiKey and googleSearchEngineId
  */
 async function getGoogleApiCredentials() {
+  // First, check for hardcoded credentials in secrets.js (loaded before this script)
+  // This allows local hardcoding for demo without committing to git
+  let googleApiKey = null;
+  let googleSearchEngineId = null;
+  
+  if (typeof self !== 'undefined') {
+    if (self.GOOGLE_API_KEY && self.GOOGLE_API_KEY !== 'your-google-api-key-here') {
+      googleApiKey = self.GOOGLE_API_KEY;
+    }
+    if (self.GOOGLE_SEARCH_ENGINE_ID && self.GOOGLE_SEARCH_ENGINE_ID !== 'your-google-search-engine-id-here') {
+      googleSearchEngineId = self.GOOGLE_SEARCH_ENGINE_ID;
+    }
+  } else if (typeof window !== 'undefined') {
+    if (window.GOOGLE_API_KEY && window.GOOGLE_API_KEY !== 'your-google-api-key-here') {
+      googleApiKey = window.GOOGLE_API_KEY;
+    }
+    if (window.GOOGLE_SEARCH_ENGINE_ID && window.GOOGLE_SEARCH_ENGINE_ID !== 'your-google-search-engine-id-here') {
+      googleSearchEngineId = window.GOOGLE_SEARCH_ENGINE_ID;
+    }
+  }
+  
+  // If we found credentials from secrets.js, return them
+  if (googleApiKey && googleSearchEngineId) {
+    return { googleApiKey, googleSearchEngineId };
+  }
+  
+  // Fallback to Chrome storage
   return new Promise((resolve) => {
     chrome.storage.sync.get(['googleApiKey', 'googleSearchEngineId'], (result) => {
       resolve({

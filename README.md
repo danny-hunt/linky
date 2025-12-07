@@ -47,8 +47,26 @@ The PRD specifies:
 ### Getting Started
 
 1. **Read the PRD**: Start by reading [PRD.md](./PRD.md) to understand all requirements
-2. **Follow technical constraints**: No LinkedIn API calls, DOM parsing only, Manifest V3
-3. **Reference PRD during development**: Check PRD.md for design decisions and requirements
+2. **Configure API Keys**: Set up your API keys (see "API Key Configuration" below)
+3. **Follow technical constraints**: No LinkedIn API calls, DOM parsing only, Manifest V3
+4. **Reference PRD during development**: Check PRD.md for design decisions and requirements
+
+### API Key Configuration
+
+The extension requires an OpenAI API key to generate message drafts. For local development and demos, you can hardcode your API key in `secrets.js` (this file is gitignored and will not be committed).
+
+**Setup Steps:**
+
+1. The `secrets.js` file already exists with placeholder values
+2. Open `secrets.js` and replace `'your-openai-api-key-here'` with your actual OpenAI API key
+3. Get your API key from: https://platform.openai.com/api-keys
+
+**Security Notes:**
+
+- `secrets.js` is gitignored and will never be committed to the repository
+- `secrets.example.js` is a template file that can be safely committed
+- The extension will first check `secrets.js` for the API key, then fall back to Chrome storage
+- For production use, consider using Chrome storage instead of hardcoded keys
 
 ### File Structure
 
@@ -62,6 +80,9 @@ The PRD specifies:
 - `content.js` - Main script that runs on LinkedIn pages
 - `content.css` - Styles for the content script
 - `background.js` - Background service worker
+- `research.js` - Research API module for gathering recipient context
+- `secrets.js` - **Local API keys (gitignored, do not commit)**
+- `secrets.example.js` - Template for API key configuration
 
 ### Icons
 
